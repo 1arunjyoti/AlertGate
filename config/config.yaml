@@ -1,0 +1,30 @@
+# Camera Configuration
+camera:
+  url: "YOUR_CAMERA_URL_HERE"  # Update with your phone's IP or use environment variable
+  width: 1280
+  height: 720
+  fps: 15
+  buffer_size: 1
+
+# Detection Configuration  
+detection:
+  model: "yolo11n.pt"  # Will auto-download on first run
+  confidence: 0.55     # Detection confidence threshold
+  target_classes: ["cat"]  # Classes to detect and alert for
+  inference_size: 640  # Input image size for model
+  process_every_n_frames: 2  # Process every 2nd frame for performance
+
+# Telegram Configuration
+telegram:
+  bot_token: "YOUR_BOT_TOKEN_HERE"  # Replace with your actual token or use environment variable
+  chat_id: "YOUR_CHAT_ID_HERE"      # Replace with your actual chat ID or use environment variable
+  
+# Alert Configuration
+alerts:
+  cooldown_seconds: 60  # Don't send alerts more than once per 1 minute
+  send_image: true       # Include snapshot with alert
+  
+# Logging
+logging:
+  level: "INFO"
+  console: true
