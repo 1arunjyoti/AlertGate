@@ -9,9 +9,10 @@ import threading
 import uvicorn
 from dotenv import load_dotenv
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 # Import our modules
-from core.capture import RTSPCapture
+from core.capture import RTSPCapture, LatestFrameBuffer, CaptureWorker
 from core.motion_gate import MotionGate
 from core.roi import ROIManager
 from core.temporal_filter import TemporalFilter
@@ -61,6 +62,12 @@ class AlertGate:
         self.temporal_filter = TemporalFilter(self.config['temporal'])
         self.detector = YOLODetector(self.config['detection'])
         self.notifier = TelegramNotifier()
+        # Detection cadence
+        self.detect_every_n = int(self.config.get('detection', {}).get('process_every_n_frames', 3))
+        if self.detect_every_n < 1:
+            self.detect_every_n = 1
+        # Background executor for alerts/snapshots to avoid blocking main loop
+        self.alert_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='alerts')
         
         # Web dashboard
         if self.config['web']['enabled']:
@@ -78,6 +85,11 @@ class AlertGate:
             'uptime': 0
         }
         
+        # Latest-frame buffer & capture worker control
+        self.frame_buffer = LatestFrameBuffer()
+        self.stop_event = threading.Event()
+        self.capture_worker = None
+        
     def run(self):
         """Main detection loop."""
         self.logger.info("🚀 Starting AlertGate...")
@@ -91,24 +103,23 @@ class AlertGate:
             dashboard_thread.start()
             self.logger.info(f"🌐 Web dashboard: http://localhost:{self.config['web']['port']}")
         
-        # Connect to camera
-        if not self.capture.connect():
-            self.logger.error("❌ Failed to connect to camera")
-            return
+        # Start capture worker thread (it handles connecting/reconnecting)
+        self.capture_worker = CaptureWorker(self.capture, self.frame_buffer, self.stop_event)
+        self.capture_worker.start()
         
         # Main processing loop
         last_fps_update = time.time()
         fps_frame_count = 0
+        last_seq = -1
         
         try:
             while True:
-                ret, frame = self.capture.read()
-                
-                if not ret:
-                    self.logger.warning("⚠️ Frame read failed, attempting reconnect...")
-                    if not self.capture.reconnect():
-                        break
+                frame, seq, ts = self.frame_buffer.get()
+                if frame is None or seq == last_seq:
+                    # No new frame yet; yield CPU briefly
+                    time.sleep(0.005)
                     continue
+                last_seq = seq
                 
                 self.frame_count += 1
                 fps_frame_count += 1
@@ -148,8 +159,8 @@ class AlertGate:
                 if self.config['web']['enabled']:
                     self.dashboard.update_stats(self.stats)
                 
-                # Small delay to prevent CPU overload
-                time.sleep(0.01)
+                # Small delay to prevent CPU overload (5ms)
+                time.sleep(0.005)
                 
         except KeyboardInterrupt:
             self.logger.info("🛑 Stopping AlertGate...")
@@ -169,7 +180,7 @@ class AlertGate:
         # Step 2: Run inference only if motion detected (or if disabled)
         if (not self.config['motion']['skip_frames_no_motion'] or 
             motion_info.motion_detected or 
-            self.frame_count % 30 == 0):  # Periodic check even without motion
+            self.frame_count % self.detect_every_n == 0):  # Configurable periodic check
             
             detections = self.detector.detect(frame)
             
@@ -202,41 +213,40 @@ class AlertGate:
         return (current_time - last_alert) >= cooldown
     
     def send_alert(self, class_name: str, detections: List[Detection], frame):
-        """Send alert notification."""
+        """Send alert notification without blocking the main loop."""
+        # Find best detection for this class
+        class_detections = [d for d in detections if d.class_name == class_name]
+        if not class_detections:
+            return
+        best_detection = max(class_detections, key=lambda d: d.confidence)
+
+        def _task():
+            try:
+                snapshot_path = self.save_snapshot(frame, detections)
+                self.notifier.send_detection_alert(best_detection, snapshot_path)
+                # Update state (done in executor thread, but simple assignments)
+                self.last_alert_times[class_name] = time.time()
+                self.temporal_filter.reset_class_history(class_name)
+                self.stats['alerts_sent'] += 1
+                if self.config['web']['enabled']:
+                    event_data = {
+                        'class_name': best_detection.class_name,
+                        'confidence': best_detection.confidence,
+                        'timestamp': best_detection.timestamp.isoformat(),
+                        'frame_number': self.frame_count,
+                        'zone': 'backyard'
+                    }
+                    self.dashboard.add_event(event_data)
+                self.logger.info(f"🚨 Alert sent: {class_name} ({best_detection.confidence:.2f})")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to send alert: {e}")
+
+        # Offload IO-heavy tasks
         try:
-            # Find best detection for this class
-            class_detections = [d for d in detections if d.class_name == class_name]
-            if not class_detections:
-                return
-            
-            best_detection = max(class_detections, key=lambda d: d.confidence)
-            
-            # Save snapshot (implement in a separate service)
-            snapshot_path = self.save_snapshot(frame, detections)
-            
-            # Send Telegram notification
-            self.notifier.send_detection_alert(best_detection, snapshot_path)
-            
-            # Update state
-            self.last_alert_times[class_name] = time.time()
-            self.temporal_filter.reset_class_history(class_name)
-            self.stats['alerts_sent'] += 1
-            
-            # Add to web dashboard
-            if self.config['web']['enabled']:
-                event_data = {
-                    'class_name': best_detection.class_name,
-                    'confidence': best_detection.confidence,
-                    'timestamp': best_detection.timestamp.isoformat(),
-                    'frame_number': self.frame_count,
-                    'zone': 'backyard'  # Could be enhanced to detect actual zone
-                }
-                self.dashboard.add_event(event_data)
-            
-            self.logger.info(f"🚨 Alert sent: {class_name} ({best_detection.confidence:.2f})")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to send alert: {e}")
+            self.alert_executor.submit(_task)
+        except Exception:
+            # Fallback to inline if executor submission fails
+            _task()
     
     def save_snapshot(self, frame, detections: List[Detection]) -> str:
         """Save annotated snapshot."""
@@ -291,7 +301,19 @@ class AlertGate:
     
     def cleanup(self):
         """Clean up resources."""
+        try:
+            if hasattr(self, 'stop_event'):
+                self.stop_event.set()
+            if hasattr(self, 'capture_worker') and self.capture_worker is not None:
+                self.capture_worker.join(timeout=2.0)
+        except Exception:
+            pass
         self.capture.release()
+        try:
+            if hasattr(self, 'alert_executor'):
+                self.alert_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
         self.logger.info("👋 AlertGate stopped")
 
 if __name__ == "__main__":

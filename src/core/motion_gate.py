@@ -9,6 +9,8 @@ class MotionGate:
         self.threshold = threshold
         self.min_contour_area = min_contour_area
         self.learning_rate = learning_rate
+        # Process at reduced resolution for speed
+        self.scale = 0.5  # 50% size
         
         # Background subtractor[47][50]
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -19,23 +21,33 @@ class MotionGate:
         
     def detect_motion(self, frame: np.ndarray) -> MotionInfo:
         """Detect motion in frame using background subtraction."""
+        # Downscale for speed
+        if self.scale != 1.0:
+            small = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
+        else:
+            small = frame
         
-        # Apply background subtraction
-        fg_mask = self.bg_subtractor.apply(frame, learningRate=self.learning_rate)
+        # Apply background subtraction on downscaled frame
+        fg_mask_small = self.bg_subtractor.apply(small, learningRate=self.learning_rate)
         
         # Remove shadows (they appear as gray in mask)
-        fg_mask[fg_mask != 255] = 0
+        fg_mask_small[fg_mask_small != 255] = 0
         
         # Apply morphological operations to reduce noise[47]
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
+        k = max(int(5 * self.scale), 3)
+        if k % 2 == 0:
+            k += 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+        fg_mask_small = cv2.morphologyEx(fg_mask_small, cv2.MORPH_OPEN, kernel)
+        fg_mask_small = cv2.morphologyEx(fg_mask_small, cv2.MORPH_CLOSE, kernel)
         
         # Find contours
-        contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(fg_mask_small, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # Filter contours by area
-        valid_contours = [c for c in contours if cv2.contourArea(c) > self.min_contour_area]
+        area_scale = (self.scale * self.scale)
+        scaled_min_area = max(1, int(self.min_contour_area * area_scale))
+        valid_contours = [c for c in contours if cv2.contourArea(c) > scaled_min_area]
         
         # Calculate total motion area
         total_area = sum(cv2.contourArea(c) for c in valid_contours)

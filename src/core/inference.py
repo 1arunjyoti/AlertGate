@@ -3,6 +3,7 @@ import numpy as np
 from typing import List, Dict, Any
 from ultralytics import YOLO
 from .types import Detection
+import torch
 
 class YOLODetector:
     def __init__(self, det_cfg: Dict[str, Any]):
@@ -25,11 +26,29 @@ class YOLODetector:
         self.name_to_id = {name.lower(): cid for cid, name in self.class_names.items()}
         self.target_ids = {self.name_to_id[c] for c in self.target_classes if c in self.name_to_id}
 
+        # Select device and enable half precision on CUDA for speed
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            self.model.to(self.device)
+            if self.device == "cuda":
+                self.model.half()
+        except Exception:
+            # Fallback gracefully if model doesn't support .to()/.half()
+            pass
+
     def detect(self, frame_bgr: np.ndarray) -> List[Detection]:
         """
         Runs inference on a BGR frame and returns a list of Detection.
         """
-        results = self.model(frame_bgr, imgsz=self.imgsz, verbose=False)
+        # Filter at inference time to reduce overhead
+        classes = list(self.target_ids) if self.target_ids else None
+        results = self.model(
+            frame_bgr,
+            imgsz=self.imgsz,
+            verbose=False,
+            conf=self.conf_threshold,
+            classes=classes,
+        )
         detections: List[Detection] = []
 
         for r in results:
@@ -38,6 +57,7 @@ class YOLODetector:
             for b in r.boxes:
                 cls_id = int(b.cls[0])
                 conf = float(b.conf)
+                # Additional safeguard filtering (should already be applied by model call)
                 if conf < self.conf_threshold:
                     continue
                 if self.target_ids and cls_id not in self.target_ids:

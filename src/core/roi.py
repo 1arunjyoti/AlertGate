@@ -8,6 +8,8 @@ class ROIManager:
         self.config = roi_config
         self.include_masks: Dict[str, np.ndarray] = {}
         self.exclude_masks: Dict[str, np.ndarray] = {}
+        self.include_contours: Dict[str, list] = {}
+        self.exclude_contours: Dict[str, list] = {}
         
     def create_masks(self, frame_shape: Tuple[int, int]):
         """Create polygon masks from normalized coordinates."""
@@ -24,6 +26,8 @@ class ROIManager:
             mask = np.zeros((height, width), dtype=np.uint8)
             cv2.fillPoly(mask, [points], 255)
             self.include_masks[zone_name] = mask
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            self.include_contours[zone_name] = contours
             
         # Create exclude zone masks
         for zone_name, zone_config in self.config.get('exclude_zones', {}).items():
@@ -35,6 +39,8 @@ class ROIManager:
             mask = np.zeros((height, width), dtype=np.uint8)
             cv2.fillPoly(mask, [points], 255)
             self.exclude_masks[zone_name] = mask
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            self.exclude_contours[zone_name] = contours
     
     def filter_detections(self, detections: List[Detection]) -> List[Detection]:
         """Filter detections based on ROI zones."""
@@ -80,21 +86,17 @@ class ROIManager:
         overlay = frame.copy()
         
         # Draw include zones in green
-        for zone_name, mask in self.include_masks.items():
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for zone_name, contours in self.include_contours.items():
             if contours:
                 cv2.drawContours(overlay, contours, -1, (0, 255, 0), 2)
-                # Get the first point of the first contour for the text position
                 point = contours[0][0][0]
                 cv2.putText(overlay, f"INCLUDE: {zone_name}", 
                            (int(point[0]), int(point[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
         # Draw exclude zones in red
-        for zone_name, mask in self.exclude_masks.items():
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for zone_name, contours in self.exclude_contours.items():
             if contours:
                 cv2.drawContours(overlay, contours, -1, (0, 0, 255), 2)
-                # Get the first point of the first contour for the text position
                 point = contours[0][0][0]
                 cv2.putText(overlay, f"EXCLUDE: {zone_name}", 
                            (int(point[0]), int(point[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)

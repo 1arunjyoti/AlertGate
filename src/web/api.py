@@ -7,7 +7,7 @@ import cv2
 import json
 import asyncio
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 
 class WebDashboard:
@@ -16,6 +16,8 @@ class WebDashboard:
         self.preview_fps = preview_fps
         self.connected_clients: List[WebSocket] = []
         self.latest_frame = None
+        self.latest_jpeg: Optional[bytes] = None
+        self.jpeg_quality: int = 75
         self.latest_stats = {}
         self.event_history = []
         self.loop = None  # To store the event loop of the dashboard's thread
@@ -64,24 +66,27 @@ class WebDashboard:
             return {"events": self.event_history[-50:]}  # Last 50 events
     
     def generate_frames(self):
-        """Generate MJPEG stream for video preview[60][66]."""
+        """Generate MJPEG stream for video preview with minimal overhead."""
+        interval = max(1.0 / max(self.preview_fps, 1), 0.01)
         while True:
-            if self.latest_frame is not None:
-                # Resize for web display
-                frame = cv2.resize(self.latest_frame, (640, 480))
-                
-                ret, buffer = cv2.imencode('.jpg', frame, 
-                                         [cv2.IMWRITE_JPEG_QUALITY, 85])
-                if ret:
-                    frame_bytes = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            
-            time.sleep(1.0 / self.preview_fps)
+            if self.latest_jpeg is not None:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + self.latest_jpeg + b'\r\n')
+            time.sleep(interval)
     
     def update_frame(self, frame):
-        """Update latest frame for streaming."""
-        self.latest_frame = frame.copy()
+        """Update latest frame for streaming by pre-encoding to JPEG."""
+        # Resize once here to reduce CPU load in generator
+        try:
+            h, w = frame.shape[:2]
+            target_w, target_h = 640, 480
+            if (w, h) != (target_w, target_h):
+                frame = cv2.resize(frame, (target_w, target_h))
+            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if ret:
+                self.latest_jpeg = buffer.tobytes()
+        except Exception as e:
+            logging.error(f"Failed to encode frame: {e}")
     
     def update_stats(self, stats: Dict[str, Any]):
         """Update dashboard statistics."""
