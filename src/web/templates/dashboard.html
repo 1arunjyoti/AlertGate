@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlertGate Dashboard</title>
+    <link href="/static/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ AlertGate Dashboard</h1>
+            <div class="status" id="status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="video-section">
+                <h2>📹 Live Feed</h2>
+                <div class="video-container">
+                    <img src="/video_feed" alt="Live Camera Feed" id="videoFeed">
+                    <div class="video-overlay">
+                        <div class="fps-counter" id="fpsCounter">FPS: --</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h2>📊 Detection Stats</h2>
+                <div class="stats-grid" id="statsGrid">
+                    <!-- Stats will be populated by JavaScript -->
+                </div>
+
+                <h3>🗳️ Temporal Voting Status</h3>
+                <div class="voting-status" id="votingStatus">
+                    <!-- Voting status will be populated by JavaScript -->
+                </div>
+
+                <h3>🎯 Motion Detection</h3>
+                <div class="motion-status" id="motionStatus">
+                    <div class="motion-indicator" id="motionIndicator">
+                        <span class="motion-dot" id="motionDot"></span>
+                        <span id="motionText">No Motion</span>
+                    </div>
+                    <div class="motion-stats">
+                        <span>Area: <span id="motionArea">0</span>px²</span>
+                        <span>Contours: <span id="motionContours">0</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="events-section">
+            <h2>🚨 Recent Events</h2>
+            <div class="events-container" id="eventsContainer">
+                <!-- Events will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>

@@ -5,14 +5,48 @@ camera:
   height: 720
   fps: 15
   buffer_size: 1
+  rtsp_transport: "tcp"
 
 # Detection Configuration  
 detection:
   model: "yolo11n.pt"  # Will auto-download on first run
   confidence: 0.55     # Detection confidence threshold
-  target_classes: ["cat"]  # Classes to detect and alert for
+  target_classes: ["cat", "dog", "person"]  # Classes to detect and alert for
   inference_size: 640  # Input image size for model
-  process_every_n_frames: 2  # Process every 2nd frame for performance
+  process_every_n_frames: 3  # Process every 2nd frame for performance, Motion gate will override this
+
+# Temporal Filtering (K of N voting)
+temporal:
+  cat:
+    votes_required: 3    # Need 3 detections
+    window_size: 5       # In last 5 frames
+  dog:
+    votes_required: 3
+    window_size: 5
+  person:
+    votes_required: 2    # Faster alerts for humans
+    window_size: 4
+
+# Motion Detection Gate
+motion:
+  enabled: true
+  threshold: 25           # Sensitivity (lower = more sensitive)
+  min_contour_area: 500  # Filter small movements
+  background_learning_rate: 0.01
+  skip_frames_no_motion: true
+
+# Region of Interest (ROI)
+roi:
+  enabled: true
+  # Normalized coordinates (0.0-1.0), polygon points
+  include_zones:
+    backyard:
+      points: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
+      classes: ["cat", "dog"]
+  exclude_zones:
+    road:
+      points: [[0.0, 0.0], [1.0, 0.0], [1.0, 0.15], [0.0, 0.15]]
+      classes: ["person"]  # Still detect animals on road
 
 # Telegram Configuration
 telegram:
@@ -21,10 +55,30 @@ telegram:
   
 # Alert Configuration
 alerts:
-  cooldown_seconds: 60  # Don't send alerts more than once per 1 minute
+  cooldown_seconds:
+    cat: 120
+    dog: 120
+    person: 60   
   send_image: true       # Include snapshot with alert
+  burst_limit: 5
+  burst_window_seconds: 600
   
+# Web Dashboard
+web:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  preview_fps: 2        # Low FPS for web preview
+  max_events_history: 100
+
+# Recording
+recording:
+  snapshots_dir: "./media/snapshots"
+  clips_dir: "./media/clips"
+  ringbuffer_seconds: 15
+  retention_days: 7
+
 # Logging
 logging:
   level: "INFO"
-  console: true
+  file: "./logs/app.log"
