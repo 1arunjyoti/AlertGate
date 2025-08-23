@@ -4,11 +4,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
 import cv2
+import numpy as np
 import json
 import asyncio
 import time
 from typing import List, Dict, Any, Optional
 import logging
+
+#TurboJPEG import for faster JPEG encoding
+try:
+    from turbojpeg import TurboJPEG, TJPF_BGR
+except Exception:
+    TurboJPEG = None
+    TJPF_BGR = None
 
 class WebDashboard:
     def __init__(self, preview_fps: int = 2):
@@ -21,6 +29,14 @@ class WebDashboard:
         self.latest_stats = {}
         self.event_history = []
         self.loop = None  # To store the event loop of the dashboard's thread
+        # TurboJPEG encoder instance
+        self.jpeg = None
+        if TurboJPEG is not None:
+            try:
+                self.jpeg = TurboJPEG()
+                logging.info("TurboJPEG enabled for JPEG encoding")
+            except Exception as e:
+                logging.warning(f"TurboJPEG unavailable: {e}; falling back to cv2.imencode")
         
         # Setup static files and templates[59][72]
         self.app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
@@ -82,9 +98,14 @@ class WebDashboard:
             target_w, target_h = 640, 480
             if (w, h) != (target_w, target_h):
                 frame = cv2.resize(frame, (target_w, target_h))
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
-            if ret:
-                self.latest_jpeg = buffer.tobytes()
+            if self.jpeg is not None and TJPF_BGR is not None:
+                # Ensure contiguous memory and BGR pixel format for TurboJPEG
+                frame = np.ascontiguousarray(frame)
+                self.latest_jpeg = self.jpeg.encode(frame, quality=self.jpeg_quality, pixel_format=TJPF_BGR)
+            else:
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                if ret:
+                    self.latest_jpeg = buffer.tobytes()
         except Exception as e:
             logging.error(f"Failed to encode frame: {e}")
     

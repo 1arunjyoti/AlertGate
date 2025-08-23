@@ -10,9 +10,11 @@ camera:
 # Detection Configuration  
 detection:
   model: "yolo11n.pt"  # Will auto-download on first run
-  confidence: 0.55     # Detection confidence threshold
+  confidence: 0.6      # Detection confidence threshold
   target_classes: ["cat", "dog", "person"]  # Classes to detect and alert for
-  inference_size: 640  # Input image size for model
+  inference_size: 512  # Input image size for model (smaller = faster)
+  iou: 0.45            # NMS IoU threshold
+  max_det: 30          # Max detections per image
   process_every_n_frames: 3  # Process every 2nd frame for performance, Motion gate will override this
 
 # Temporal Filtering (K of N voting)

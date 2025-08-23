@@ -1,4 +1,4 @@
-# AlertGate 🛡️
+# AlertGate 
 
 **Real-time Animal & Human Detection System with Phone Camera Integration**
 
@@ -7,24 +7,24 @@ AlertGate transforms your spare smartphone into a powerful AI-driven security ca
 ## 🌟 Features
 
 ### Core Detection Capabilities
-- **🎯 Multi-class Detection**: Cats, dogs, humans, and other animals using YOLO11n
-- **📱 Phone Camera Integration**: Convert any smartphone into an IP camera via RTSP
-- **🧠 Temporal Filtering**: K-of-N voting system to eliminate false alarms
-- **🎭 Motion Gating**: CPU-efficient processing with background subtraction
-- **🗺️ ROI Management**: Define include/exclude zones with polygon masking
-- **⚡ Real-time Processing**: Optimized for low-end hardware (4-8GB RAM)
+- **Multi-class Detection**: Cats, dogs, humans, and other animals using YOLO11n
+- **Phone Camera Integration**: Convert any smartphone into an IP camera via RTSP
+- **Temporal Filtering**: K-of-N voting system to eliminate false alarms
+- **Motion Gating**: CPU-efficient processing with background subtraction
+- **ROI Management**: Define include/exclude zones with polygon masking
+- **Real-time Processing**: Optimized for low-end hardware (4-8GB RAM)
 
 ### Smart Alerting System
-- **📲 Telegram Integration**: Instant notifications with snapshots
-- **⏰ Configurable Cooldowns**: Per-class alert intervals to prevent spam
-- **🎨 Rich Notifications**: Confidence scores, timestamps, and annotated images
-- **📊 Event History**: Searchable log of all detection events
+- **Telegram Integration**: Instant notifications with snapshots
+- **Configurable Cooldowns**: Per-class alert intervals to prevent spam
+- **Rich Notifications**: Confidence scores, timestamps, and annotated images
+- **Event History**: Searchable log of all detection events
 
 ### Privacy & Security
-- **🏠 Local Processing**: All AI inference runs on your hardware
-- **🔒 Network Isolation**: No cloud dependencies for core functionality
-- **📁 Local Storage**: Snapshots and clips stored on your device
-- **🛡️ Secure Notifications**: End-to-end encrypted Telegram delivery
+- **Local Processing**: All AI inference runs on your hardware
+- **Network Isolation**: No cloud dependencies for core functionality
+- **Local Storage**: Snapshots and clips stored on your device
+- **Secure Notifications**: End-to-end encrypted Telegram delivery
 
 ## 🚀 Quick Start
 
@@ -42,12 +42,13 @@ AlertGate transforms your spare smartphone into a powerful AI-driven security ca
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/EdgeSentinel.git
+git clone https://github.com/1arunjyoti/AlertGate.git
 cd AlertGate
 
 # Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate  # On Windows: 
+.venv\Scripts\activate  # On Windows
+source .venv/bin/activate  # On Linux/Mac
 
 # Install dependencies
 pip install -r requirements.txt
@@ -79,21 +80,28 @@ pip install -r requirements.txt
 ### 4. First Run
 
 ```bash
-# Test camera connection
+# create your environment variable file
+.env
+
+# Test camera connection (optional)
 python test/camera_test.py
 
-# Start EdgeSentinel
+# Test Telegram notifications (optional)
+python test/telegram_test.py
+
+# Start AlertGate
 python src/main.py
 ```
 
 **Expected Output:**
 ```
 🚀 Starting AlertGate...
+🌐 Web dashboard: http://localhost:8080
 ✅ Connected to RTSP stream: rtsp://Ip_Address:Port/h264_ucs.sdp
 ✅ YOLO11n model loaded successfully!
 ✅ Telegram bot connected: YourBotName
-🌐 Web dashboard: http://localhost:port
-🎯 Looking for: ['cat', 'dog', 'person']
+✅ Snapshot saved to ...
+✅ Alert sent: cat (0.84)
 ```
 
 ## 🏗️ Architecture
@@ -105,8 +113,8 @@ AlertGate/
 │   ├── core/                   # Core detection modules
 │   │   ├── capture.py          # RTSP camera interface
 │   │   ├── inference.py        # YOLO11n detection engine
-│   │   ├── motion_gate.py      # Background subtraction
-│   │   ├── roi.py              # Region of interest management
+│   │   ├── motion_gate.py      # Implements the motion detection
+│   │   ├── roi.py              # Region of interest filtering
 │   │   ├── temporal_filter.py  # K-of-N voting system
 │   │   └── types.py            # Data structures
 │   ├── services/               # External integrations

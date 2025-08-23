@@ -17,11 +17,13 @@ class YOLODetector:
         self.model_name = det_cfg.get("model", "yolo11n.pt")
         self.conf_threshold = float(det_cfg.get("confidence", 0.55))
         self.imgsz = int(det_cfg.get("inference_size", 640))
+        self.iou = float(det_cfg.get("iou", 0.45))
+        self.max_det = int(det_cfg.get("max_det", 50))
         self.target_classes = [c.lower() for c in det_cfg.get("target_classes", ["cat"])]
 
-        # Load model (auto-downloads if not present)
+        # Load model
         self.model = YOLO(self.model_name)
-        self.class_names = self.model.names  # {id: name}
+        self.class_names = self.model.names
         # Build map name->id for filtering
         self.name_to_id = {name.lower(): cid for cid, name in self.class_names.items()}
         self.target_ids = {self.name_to_id[c] for c in self.target_classes if c in self.name_to_id}
@@ -32,8 +34,32 @@ class YOLODetector:
             self.model.to(self.device)
             if self.device == "cuda":
                 self.model.half()
+                # Enable cuDNN autotuner for fixed-size inputs to accelerate convs
+                torch.backends.cudnn.benchmark = True
         except Exception:
             # Fallback gracefully if model doesn't support .to()/.half()
+            pass
+
+        # Fuse Conv+BN where supported to reduce inference latency
+        try:
+            self.model.fuse()
+        except Exception:
+            pass
+
+        # Ensure eval mode
+        try:
+            self.model.eval()
+        except Exception:
+            pass
+
+        # Lightweight warmup to stabilize autotuner/JIT paths
+        try:
+            dummy = np.zeros((self.imgsz, self.imgsz, 3), dtype=np.uint8)
+            n_warmup = 2
+            with torch.inference_mode():
+                for _ in range(n_warmup):
+                    _ = self.model(dummy, imgsz=self.imgsz, verbose=False, conf=self.conf_threshold, iou=self.iou, max_det=self.max_det)
+        except Exception:
             pass
 
     def detect(self, frame_bgr: np.ndarray) -> List[Detection]:
@@ -42,13 +68,16 @@ class YOLODetector:
         """
         # Filter at inference time to reduce overhead
         classes = list(self.target_ids) if self.target_ids else None
-        results = self.model(
-            frame_bgr,
-            imgsz=self.imgsz,
-            verbose=False,
-            conf=self.conf_threshold,
-            classes=classes,
-        )
+        with torch.inference_mode():
+            results = self.model(
+                frame_bgr,
+                imgsz=self.imgsz,
+                verbose=False,
+                conf=self.conf_threshold,
+                iou=self.iou,
+                max_det=self.max_det,
+                classes=classes,
+            )
         detections: List[Detection] = []
 
         for r in results:

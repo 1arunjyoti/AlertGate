@@ -2,6 +2,7 @@ import asyncio
 import yaml
 import logging
 import cv2
+import numpy as np
 import time
 from datetime import datetime
 from typing import Dict, Any, List
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-# Import our modules
+
 from core.capture import RTSPCapture, LatestFrameBuffer, CaptureWorker
 from core.motion_gate import MotionGate
 from core.roi import ROIManager
@@ -89,6 +90,44 @@ class AlertGate:
         self.frame_buffer = LatestFrameBuffer()
         self.stop_event = threading.Event()
         self.capture_worker = None
+    
+    def _get_include_crop_rect(self, frame_shape):
+        """Compute a tight bounding box around all include zones. Returns (x1,y1,x2,y2) or None.
+        Adds a small margin and clamps to frame bounds. Falls back to None if ROI disabled/empty.
+        """
+        try:
+            if not self.roi_manager.config.get('enabled', False):
+                return None
+            contours_map = getattr(self.roi_manager, 'include_contours', None)
+            if not contours_map:
+                return None
+            contours = []
+            for cs in contours_map.values():
+                if cs:
+                    contours.extend(cs)
+            if not contours:
+                return None
+            H, W = frame_shape[:2]
+            min_x, min_y, max_x, max_y = W, H, 0, 0
+            for c in contours:
+                x, y, w, h = cv2.boundingRect(c)
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x + w)
+                max_y = max(max_y, y + h)
+            # Add 5% margin
+            mx = int(0.05 * W)
+            my = int(0.05 * H)
+            x1 = max(0, min_x - mx)
+            y1 = max(0, min_y - my)
+            x2 = min(W, max_x + mx)
+            y2 = min(H, max_y + my)
+            # Ensure minimum size to keep network stable
+            if (x2 - x1) < 64 or (y2 - y1) < 64:
+                return None
+            return (x1, y1, x2, y2)
+        except Exception:
+            return None
         
     def run(self):
         """Main detection loop."""
@@ -172,27 +211,53 @@ class AlertGate:
     def process_frame(self, frame) -> FrameData:
         """Process a single frame through the detection pipeline."""
         
-        # Step 1: Motion detection
+        # Motion detection
         motion_info = self.motion_gate.detect_motion(frame)
         
         detections = []
         
-        # Step 2: Run inference only if motion detected (or if disabled)
+        # Run inference only if motion detected (or if disabled)
         if (not self.config['motion']['skip_frames_no_motion'] or 
             motion_info.motion_detected or 
             self.frame_count % self.detect_every_n == 0):  # Configurable periodic check
             
-            detections = self.detector.detect(frame)
+            # Optionally crop to include-zone bounding box for faster inference
+            crop_rect = self._get_include_crop_rect(frame.shape)
+            if crop_rect is not None:
+                x1, y1, x2, y2 = crop_rect
+                detect_frame = frame[y1:y2, x1:x2]
+            else:
+                x1 = y1 = 0
+                detect_frame = frame
+
+            # Ensure memory layout contiguous to avoid extra copies in OpenCV/Torch
+            detect_frame = np.ascontiguousarray(detect_frame)
+
+            detections = self.detector.detect(detect_frame)
             
-            # Step 3: Apply ROI filtering
+            # Translate detection boxes back to full-frame coords if cropped
+            if crop_rect is not None:
+                translated = []
+                for d in detections:
+                    bx1, by1, bx2, by2 = d.bbox
+                    translated.append(Detection(
+                        class_id=d.class_id,
+                        class_name=d.class_name,
+                        confidence=d.confidence,
+                        bbox=(bx1 + x1, by1 + y1, bx2 + x1, by2 + y1),
+                        timestamp=d.timestamp
+                    ))
+                detections = translated
+            
+            # Apply ROI filtering
             detections = self.roi_manager.filter_detections(detections)
             
             self.stats['total_detections'] += len(detections)
         
-        # Step 4: Temporal filtering
+        # Temporal filtering
         triggers = self.temporal_filter.add_detections(detections, self.frame_count)
         
-        # Step 5: Send alerts for triggered classes
+        # Send alerts for triggered classes
         for class_name, should_alert in triggers.items():
             if should_alert and self.should_send_alert(class_name):
                 self.send_alert(class_name, detections, frame)
@@ -220,13 +285,16 @@ class AlertGate:
             return
         best_detection = max(class_detections, key=lambda d: d.confidence)
 
+        # Immediately set cooldown and reset temporal history to avoid duplicate alerts
+        # across consecutive frames before the async task runs.
+        self.last_alert_times[class_name] = time.time()
+        self.temporal_filter.reset_class_history(class_name)
+
         def _task():
             try:
                 snapshot_path = self.save_snapshot(frame, detections)
                 self.notifier.send_detection_alert(best_detection, snapshot_path)
-                # Update state (done in executor thread, but simple assignments)
-                self.last_alert_times[class_name] = time.time()
-                self.temporal_filter.reset_class_history(class_name)
+                # Update state
                 self.stats['alerts_sent'] += 1
                 if self.config['web']['enabled']:
                     event_data = {
