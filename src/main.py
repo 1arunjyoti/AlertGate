@@ -20,6 +20,7 @@ from core.temporal_filter import TemporalFilter
 from core.types import Detection, Event, FrameData
 from core.inference import YOLODetector
 from services.telegram_service import TelegramNotifier
+from services.event_store import EventStore
 from web.api import WebDashboard
 
 load_dotenv()
@@ -70,9 +71,20 @@ class AlertGate:
         # Background executor for alerts/snapshots to avoid blocking main loop
         self.alert_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='alerts')
         
+        # Event store (SQLite)
+        db_cfg = self.config.get('database', {})
+        db_path = os.getenv('DATABASE_PATH', db_cfg.get('path', './media/alertgate.db'))
+        self.event_store = EventStore(db_path)
+        try:
+            retention_days = int(db_cfg.get('retention_days', 30))
+            self.event_store.prune_older_than(retention_days)
+        except Exception:
+            pass
+        
         # Web dashboard
         if self.config['web']['enabled']:
-            self.dashboard = WebDashboard(self.config['web']['preview_fps'])
+            events_limit = int(self.config['web'].get('max_events_history', 100))
+            self.dashboard = WebDashboard(self.config['web']['preview_fps'], event_store=self.event_store, events_limit=events_limit)
         
         # State tracking
         self.frame_count = 0
@@ -296,14 +308,24 @@ class AlertGate:
                 self.notifier.send_detection_alert(best_detection, snapshot_path)
                 # Update state
                 self.stats['alerts_sent'] += 1
+                event_data = {
+                    'class_name': best_detection.class_name,
+                    'confidence': best_detection.confidence,
+                    'timestamp': best_detection.timestamp.isoformat(),
+                    'frame_number': self.frame_count,
+                    'zone': 'backyard',
+                    'snapshot_path': snapshot_path
+                }
+                # Persist to DB regardless of web dashboard status and attach id for dedupe
+                try:
+                    if hasattr(self, 'event_store') and self.event_store is not None:
+                        insert_id = self.event_store.add_event(event_data)
+                        if isinstance(insert_id, int) and insert_id > 0:
+                            event_data['id'] = insert_id
+                except Exception:
+                    pass
+                # Broadcast to web dashboard if enabled
                 if self.config['web']['enabled']:
-                    event_data = {
-                        'class_name': best_detection.class_name,
-                        'confidence': best_detection.confidence,
-                        'timestamp': best_detection.timestamp.isoformat(),
-                        'frame_number': self.frame_count,
-                        'zone': 'backyard'
-                    }
                     self.dashboard.add_event(event_data)
                 self.logger.info(f"🚨 Alert sent: {class_name} ({best_detection.confidence:.2f})")
             except Exception as e:
@@ -380,6 +402,11 @@ class AlertGate:
         try:
             if hasattr(self, 'alert_executor'):
                 self.alert_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'event_store') and self.event_store is not None:
+                self.event_store.close()
         except Exception:
             pass
         self.logger.info("👋 AlertGate stopped")

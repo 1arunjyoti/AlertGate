@@ -19,7 +19,7 @@ except Exception:
     TJPF_BGR = None
 
 class WebDashboard:
-    def __init__(self, preview_fps: int = 2):
+    def __init__(self, preview_fps: int = 2, event_store=None, events_limit: int = 50):
         self.app = FastAPI(title="EdgeSentinel Dashboard")
         self.preview_fps = preview_fps
         self.connected_clients: List[WebSocket] = []
@@ -27,7 +27,10 @@ class WebDashboard:
         self.latest_jpeg: Optional[bytes] = None
         self.jpeg_quality: int = 75
         self.latest_stats = {}
+        # Keep small in-memory tail for immediate UI feedback; DB remains source of truth
         self.event_history = []
+        self.event_store = event_store
+        self.events_limit = events_limit
         self.loop = None  # To store the event loop of the dashboard's thread
         # TurboJPEG encoder instance
         self.jpeg = None
@@ -79,7 +82,15 @@ class WebDashboard:
         
         @self.app.get("/api/events")
         async def get_events():
-            return {"events": self.event_history[-50:]}  # Last 50 events
+            limit = self.events_limit or 50
+            if self.event_store is not None:
+                try:
+                    events = self.event_store.get_recent_events(limit)
+                    return {"events": events}
+                except Exception as e:
+                    logging.error(f"Failed to fetch events from store: {e}")
+            # Fallback to in-memory
+            return {"events": self.event_history[-limit:]}
     
     def generate_frames(self):
         """Generate MJPEG stream for video preview with minimal overhead."""

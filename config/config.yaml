@@ -44,11 +44,11 @@ roi:
   include_zones:
     backyard:
       points: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
-      classes: ["cat", "dog"]
+      classes: ["cat", "dog", "person"]
   exclude_zones:
     road:
       points: [[0.0, 0.0], [1.0, 0.0], [1.0, 0.15], [0.0, 0.15]]
-      classes: ["person"]  # Still detect animals on road
+      classes: ["person", "cat", "dog"]  # Still detect animals on road
 
 # Telegram Configuration
 telegram:
@@ -79,6 +79,11 @@ recording:
   clips_dir: "./media/clips"
   ringbuffer_seconds: 15
   retention_days: 7
+
+# Database (SQLite)
+database:
+  path: "./media/alertgate.db"
+  retention_days: 30
 
 # Logging
 logging:

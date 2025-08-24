@@ -2,8 +2,10 @@ class AlertGateDashboard {
     constructor() {
         this.ws = null;
         this.isConnected = false;
+        this.seenEventKeys = new Set();
         this.connectWebSocket();
         this.updateElements();
+        this.loadRecentEvents();
     }
 
     connectWebSocket() {
@@ -41,6 +43,21 @@ class AlertGateDashboard {
             console.error('WebSocket error:', error);
             this.updateConnectionStatus('error', 'Connection Error');
         };
+    }
+
+    async loadRecentEvents() {
+        try {
+            const res = await fetch('/api/events');
+            if (!res.ok) return;
+            const data = await res.json();
+            const events = data.events || [];
+            // Add oldest first so latest ends up on top when inserted at beginning
+            for (let i = events.length - 1; i >= 0; i--) {
+                this.addEvent(events[i]);
+            }
+        } catch (e) {
+            console.warn('Failed to load recent events', e);
+        }
     }
 
     updateConnectionStatus(status, text) {
@@ -134,6 +151,9 @@ class AlertGateDashboard {
     }
 
     addEvent(eventData) {
+        const key = this.eventKey(eventData);
+        if (this.seenEventKeys.has(key)) return;
+        this.seenEventKeys.add(key);
         const eventsContainer = document.getElementById('eventsContainer');
         
         const eventHtml = `
@@ -157,6 +177,15 @@ class AlertGateDashboard {
         if (events.length > 20) {
             eventsContainer.removeChild(events[events.length - 1]);
         }
+    }
+
+    eventKey(e) {
+        if (e && typeof e.id === 'number') return `id:${e.id}`;
+        const ts = e && e.timestamp ? e.timestamp : '';
+        const cls = e && e.class_name ? e.class_name : '';
+        const fn = e && typeof e.frame_number !== 'undefined' ? e.frame_number : '';
+        const zone = e && e.zone ? e.zone : '';
+        return `k:${ts}|${cls}|${fn}|${zone}`;
     }
 
     updateElements() {
