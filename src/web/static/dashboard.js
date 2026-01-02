@@ -7,7 +7,7 @@ class AlertGateDashboard {
         this.updateElements();
         this.loadRecentEvents();
     }
-
+    // Establish WebSocket connection and set up event handlers
     connectWebSocket() {
         const wsUrl = `ws://${window.location.host}/ws`;
         this.ws = new WebSocket(wsUrl);
@@ -44,7 +44,7 @@ class AlertGateDashboard {
             this.updateConnectionStatus('error', 'Connection Error');
         };
     }
-
+    // Load recent events from the server
     async loadRecentEvents() {
         try {
             const res = await fetch('/api/events');
@@ -59,7 +59,7 @@ class AlertGateDashboard {
             console.warn('Failed to load recent events', e);
         }
     }
-
+    // Update connection status and text
     updateConnectionStatus(status, text) {
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -67,7 +67,7 @@ class AlertGateDashboard {
         statusDot.className = `status-dot ${status}`;
         statusText.textContent = text;
     }
-
+    // Update dashboard statistics
     updateStats(stats) {
         // Update FPS counter
         if (stats.fps) {
@@ -87,7 +87,7 @@ class AlertGateDashboard {
             this.updateMotionStatus(stats.motion);
         }
     }
-
+    // Update the statistics grid with current stats
     updateStatsGrid(stats) {
         const statsGrid = document.getElementById('statsGrid');
         
@@ -105,7 +105,7 @@ class AlertGateDashboard {
             </div>
         `).join('');
     }
-
+    // Update temporal voting status display
     updateVotingStatus(votingData) {
         const votingStatus = document.getElementById('votingStatus');
         
@@ -131,7 +131,7 @@ class AlertGateDashboard {
         
         votingStatus.innerHTML = votingHtml;
     }
-
+    // Update motion detection status display
     updateMotionStatus(motionData) {
         const motionDot = document.getElementById('motionDot');
         const motionText = document.getElementById('motionText');
@@ -149,7 +149,7 @@ class AlertGateDashboard {
         motionArea.textContent = motionData.area || 0;
         motionContours.textContent = motionData.contours || 0;
     }
-
+    // Add a new event to the events list
     addEvent(eventData) {
         const key = this.eventKey(eventData);
         if (this.seenEventKeys.has(key)) return;
@@ -178,7 +178,7 @@ class AlertGateDashboard {
             eventsContainer.removeChild(events[events.length - 1]);
         }
     }
-
+    // Generate a unique key for an event to prevent duplicates
     eventKey(e) {
         if (e && typeof e.id === 'number') return `id:${e.id}`;
         const ts = e && e.timestamp ? e.timestamp : '';
@@ -196,7 +196,7 @@ class AlertGateDashboard {
             }
         }, 30000);
     }
-
+    // Format uptime in hours and minutes
     formatUptime(seconds) {
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor((seconds % 3600) / 60);

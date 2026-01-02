@@ -18,8 +18,10 @@ class TelegramNotifier:
         if not self.bot_token or not self.chat_id:
             raise ValueError("TelegramNotifier requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to be set in the environment.")
 
+        # Base URL for Telegram Bot API
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
+    # Send text message
     def send_text(self, text: str) -> bool:
         url = f"{self.base_url}/sendMessage"
         data = {
@@ -32,6 +34,7 @@ class TelegramNotifier:
         except Exception:
             return False
 
+    # Send photo with optional caption
     def send_photo(self, photo_path: str, caption: Optional[str] = None) -> bool:
         url = f"{self.base_url}/sendPhoto"
         data = {
@@ -46,6 +49,7 @@ class TelegramNotifier:
         except Exception:
             return False
 
+    # Send detection alert with optional snapshot
     def send_detection_alert(self, detection, snapshot_path: Optional[str] = None) -> bool:
         """
         detection: Detection dataclass (class_name, confidence, bbox, timestamp)

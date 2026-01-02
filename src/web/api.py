@@ -34,6 +34,8 @@ class WebDashboard:
         self.loop = None  # To store the event loop of the dashboard's thread
         # TurboJPEG encoder instance
         self.jpeg = None
+        
+        # Initialize TurboJPEG if available
         if TurboJPEG is not None:
             try:
                 self.jpeg = TurboJPEG()
@@ -47,23 +49,28 @@ class WebDashboard:
         
         self.setup_routes()
         
+    # Setup FastAPI routes
     def setup_routes(self):
         """Setup FastAPI routes."""
         
+        # Get the event loop on startup
         @self.app.on_event("startup")
         async def startup_event():
             """Get the running event loop on startup."""
             self.loop = asyncio.get_running_loop()
         
+        # Dashboard page
         @self.app.get("/", response_class=HTMLResponse)
         async def dashboard(request: Request):
             return self.templates.TemplateResponse("dashboard.html", {"request": request})
         
+        # MJPEG video feed
         @self.app.get("/video_feed")
         def video_feed():
             return StreamingResponse(self.generate_frames(), 
                                    media_type="multipart/x-mixed-replace; boundary=frame")
         
+        # WebSocket endpoint for real-time stats and events
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await websocket.accept()
@@ -76,10 +83,12 @@ class WebDashboard:
             except WebSocketDisconnect:
                 self.connected_clients.remove(websocket)
         
+        # API endpoint for latest stats
         @self.app.get("/api/stats")
         async def get_stats():
             return self.latest_stats
         
+        # API endpoint for recent events
         @self.app.get("/api/events")
         async def get_events():
             limit = self.events_limit or 50
@@ -92,6 +101,7 @@ class WebDashboard:
             # Fallback to in-memory
             return {"events": self.event_history[-limit:]}
     
+    # MJPEG stream generator
     def generate_frames(self):
         """Generate MJPEG stream for video preview with minimal overhead."""
         interval = max(1.0 / max(self.preview_fps, 1), 0.01)
@@ -101,6 +111,7 @@ class WebDashboard:
                        b'Content-Type: image/jpeg\r\n\r\n' + self.latest_jpeg + b'\r\n')
             time.sleep(interval)
     
+    # Update latest frame
     def update_frame(self, frame):
         """Update latest frame for streaming by pre-encoding to JPEG."""
         # Resize once here to reduce CPU load in generator
@@ -120,6 +131,7 @@ class WebDashboard:
         except Exception as e:
             logging.error(f"Failed to encode frame: {e}")
     
+    # Update dashboard statistics
     def update_stats(self, stats: Dict[str, Any]):
         """Update dashboard statistics."""
         self.latest_stats = stats
@@ -127,6 +139,7 @@ class WebDashboard:
         if self.connected_clients and self.loop:
             asyncio.run_coroutine_threadsafe(self.broadcast_stats(stats), self.loop)
     
+    # Broadcast stats to WebSocket clients
     async def broadcast_stats(self, stats: Dict[str, Any]):
         """Broadcast stats to all connected WebSocket clients."""
         message = json.dumps({"type": "stats", "data": stats})
@@ -143,6 +156,7 @@ class WebDashboard:
             if client in self.connected_clients:
                 self.connected_clients.remove(client)
     
+    # Add event to history and broadcast
     def add_event(self, event_data: Dict[str, Any]):
         """Add event to history."""
         self.event_history.append(event_data)
@@ -153,6 +167,7 @@ class WebDashboard:
         if self.connected_clients and self.loop:
             asyncio.run_coroutine_threadsafe(self.broadcast_event(event_data), self.loop)
     
+    # Broadcast event to WebSocket clients
     async def broadcast_event(self, event_data: Dict[str, Any]):
         """Broadcast new event to all connected clients."""
         message = json.dumps({"type": "event", "data": event_data})

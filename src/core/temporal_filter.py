@@ -3,11 +3,13 @@ from typing import List, Dict, Any
 from .types import Detection
 
 class TemporalFilter:
+    # Initialize with configuration for temporal filtering
     def __init__(self, temporal_config: Dict[str, Any]):
         self.config = temporal_config
         # Store detection history for each class[1][4]
         self.detection_history: Dict[str, deque] = defaultdict(deque)
         
+    # Methods for adding detections, checking votes, and history
     def add_detections(self, detections: List[Detection], frame_number: int) -> Dict[str, bool]:
         """Add detections and return which classes should trigger alerts."""
         triggers = {}
@@ -38,15 +40,18 @@ class TemporalFilter:
                 
         return triggers
     
+    # Reset history for a class after alert
     def reset_class_history(self, class_name: str):
         """Reset detection history for a specific class (after alert sent)."""
         if class_name in self.detection_history:
             self.detection_history[class_name].clear()
     
+    # Get current voting status for web dashboard
     def get_voting_status(self) -> Dict[str, Dict[str, Any]]:
         """Get current voting status for web dashboard."""
         status = {}
         
+        # Iterate through each configured class
         for class_name in self.config.keys():
             class_config = self.config[class_name]
             history = list(self.detection_history[class_name])

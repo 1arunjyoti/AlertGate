@@ -48,7 +48,7 @@ roi:
   exclude_zones:
     road:
       points: [[0.0, 0.0], [1.0, 0.0], [1.0, 0.15], [0.0, 0.15]]
-      classes: ["person", "cat", "dog"]  # Still detect animals on road
+      classes: ["person", "cat", "dog"]
 
 # Telegram Configuration
 telegram:

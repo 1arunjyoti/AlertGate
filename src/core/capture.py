@@ -77,12 +77,14 @@ class LatestFrameBuffer:
         self._seq: int = 0
         self._timestamp: float = 0.0
 
+    # Update frame, increment sequence, and update timestamp
     def set(self, frame: np.ndarray):
         with self._lock:
             self._frame = frame
             self._seq += 1
             self._timestamp = time.time()
 
+    # Get current frame, sequence, and timestamp
     def get(self) -> Tuple[Optional[np.ndarray], int, float]:
         with self._lock:
             return self._frame, self._seq, self._timestamp

@@ -64,6 +64,7 @@ class EventStore:
                 )
             self._conn.commit()
 
+    # Remove duplicates keeping the smallest id per logical event key
     def _dedupe_existing_rows(self):
         """Remove duplicate rows keeping the smallest id per logical event key."""
         # Use a DELETE with a subselect to keep MIN(id) for each key group
@@ -78,6 +79,7 @@ class EventStore:
         )
         self._conn.commit()
 
+    # Insert a new event
     def add_event(self, event: Dict) -> int:
         """Insert a new event. Returns inserted row id.
         Expected keys in event dict: class_name, confidence, timestamp (ISO str), frame_number, zone, snapshot_path(optional)
@@ -106,6 +108,7 @@ class EventStore:
                 return -1
             return int(cur.lastrowid)
 
+    # Retrieve recent events
     def get_recent_events(self, limit: int = 50) -> List[Dict]:
         with self._lock:
             cur = self._conn.execute(
@@ -133,6 +136,7 @@ class EventStore:
             )
         return events
 
+    # Prune events older than given days
     def prune_older_than(self, days: int = 30) -> int:
         """Delete events older than given days. Returns number of rows deleted."""
         cutoff = (datetime.utcnow() - timedelta(days=int(days))).isoformat()
@@ -144,6 +148,7 @@ class EventStore:
             self._conn.commit()
             return cur.rowcount or 0
 
+    # Close the connection
     def close(self):
         with self._lock:
             try:

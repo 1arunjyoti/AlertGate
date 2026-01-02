@@ -37,7 +37,7 @@ class YOLODetector:
                 # Enable cuDNN autotuner for fixed-size inputs to accelerate convs
                 torch.backends.cudnn.benchmark = True
         except Exception:
-            # Fallback gracefully if model doesn't support .to()/.half()
+            # Fallback if model doesn't support .to()/.half()
             pass
 
         # Fuse Conv+BN where supported to reduce inference latency
@@ -91,7 +91,8 @@ class YOLODetector:
                     continue
                 if self.target_ids and cls_id not in self.target_ids:
                     continue
-
+                
+                # Bounding box in xyxy format
                 xyxy = b.xyxy.cpu().numpy().tolist()[0]  # [x1, y1, x2, y2]
                 x1, y1, x2, y2 = map(int, xyxy)
                 class_name = self.class_names.get(cls_id, str(cls_id))

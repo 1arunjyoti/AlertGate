@@ -11,6 +11,7 @@ class ROIManager:
         self.include_contours: Dict[str, list] = {}
         self.exclude_contours: Dict[str, list] = {}
         
+    # Masks are created based on frame dimensions
     def create_masks(self, frame_shape: Tuple[int, int]):
         """Create polygon masks from normalized coordinates."""
         height, width = frame_shape[:2]
@@ -49,6 +50,7 @@ class ROIManager:
             
         filtered_detections = []
         
+        # Iterate through detections
         for detection in detections:
             x1, y1, x2, y2 = detection.bbox
             center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
