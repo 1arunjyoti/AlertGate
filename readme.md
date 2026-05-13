@@ -54,6 +54,42 @@ source .venv/bin/activate  # On Linux/Mac
 pip install -r requirements.txt
 ```
 
+### Docker Setup
+
+If you prefer to run AlertGate without setting up Python locally, use Docker Compose.
+
+```bash
+# Clone the repository
+git clone https://github.com/1arunjyoti/AlertGate.git
+cd AlertGate
+
+# Create your local environment file
+cp .env.example .env
+```
+
+Edit `.env` with your RTSP camera URL and Telegram bot values:
+
+```env
+CAMERA_URL=rtsp://your-phone-ip:port/h264_ucs.sdp
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_CHAT_ID=your-telegram-chat-id
+DATABASE_PATH=/app/media/alertgate.db
+```
+
+Then build and start the container:
+
+```bash
+docker compose up --build
+```
+
+The dashboard will be available at `http://localhost:8080`. Runtime data is stored in Docker volumes named `alertgate_media` and `alertgate_logs`, so it survives container rebuilds. The Docker image preloads the default `yolo11n.pt` model during build.
+
+If you want to use a local model file instead of the one baked into the image, uncomment the model volume in `docker-compose.yml`:
+
+```yaml
+- ./yolo11n.pt:/app/yolo11n.pt:ro
+```
+
 ### 2. Phone Setup (Camera)
 
 **Android (Recommended):**

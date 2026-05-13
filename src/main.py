@@ -1,24 +1,22 @@
-import asyncio
 import yaml
 import logging
-import cv2
 import numpy as np
 import time
-from datetime import datetime
-from typing import Dict, Any, List
 import threading
 import uvicorn
 from dotenv import load_dotenv
 import os
-from concurrent.futures import ThreadPoolExecutor
 
 
+from alerts.alert_manager import AlertManager
+from alerts.snapshot_writer import SnapshotWriter
 from core.capture import RTSPCapture, LatestFrameBuffer, CaptureWorker
 from core.motion_gate import MotionGate
 from core.roi import ROIManager
 from core.temporal_filter import TemporalFilter
-from core.types import Detection, Event, FrameData
+from core.types import Detection, FrameData
 from core.inference import YOLODetector
+from pipeline.roi_crop import get_include_crop_rect
 from services.telegram_service import TelegramNotifier
 from services.event_store import EventStore
 from web.api import WebDashboard
@@ -68,8 +66,6 @@ class AlertGate:
         self.detect_every_n = int(self.config.get('detection', {}).get('process_every_n_frames', 3))
         if self.detect_every_n < 1:
             self.detect_every_n = 1
-        # Background executor for alerts/snapshots to avoid blocking main loop
-        self.alert_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='alerts')
         
         # Event store (SQLite)
         db_cfg = self.config.get('database', {})
@@ -82,6 +78,7 @@ class AlertGate:
             pass
         
         # Web dashboard
+        self.dashboard = None
         if self.config['web']['enabled']:
             events_limit = int(self.config['web'].get('max_events_history', 100))
             self.dashboard = WebDashboard(self.config['web']['preview_fps'], event_store=self.event_store, events_limit=events_limit)
@@ -89,7 +86,6 @@ class AlertGate:
         # State tracking
         self.frame_count = 0
         self.start_time = time.time()
-        self.last_alert_times = {}
         self.stats = {
             'total_detections': 0,
             'alerts_sent': 0,
@@ -97,49 +93,25 @@ class AlertGate:
             'frame_number': 0,
             'uptime': 0
         }
+
+        self.snapshot_writer = SnapshotWriter(self.config, self.logger)
+        self.alert_manager = AlertManager(
+            alerts_config=self.config['alerts'],
+            web_config=self.config['web'],
+            notifier=self.notifier,
+            snapshot_writer=self.snapshot_writer,
+            event_store=self.event_store,
+            dashboard=self.dashboard,
+            temporal_filter=self.temporal_filter,
+            stats=self.stats,
+            logger=self.logger,
+            frame_number_getter=lambda: self.frame_count,
+        )
         
         # Latest-frame buffer & capture worker control
         self.frame_buffer = LatestFrameBuffer()
         self.stop_event = threading.Event()
         self.capture_worker = None
-    
-    def _get_include_crop_rect(self, frame_shape):
-        """Compute a tight bounding box around all include zones. Returns (x1,y1,x2,y2) or None.
-        Adds a small margin and clamps to frame bounds. Falls back to None if ROI disabled/empty.
-        """
-        try:
-            if not self.roi_manager.config.get('enabled', False):
-                return None
-            contours_map = getattr(self.roi_manager, 'include_contours', None)
-            if not contours_map:
-                return None
-            contours = []
-            for cs in contours_map.values():
-                if cs:
-                    contours.extend(cs)
-            if not contours:
-                return None
-            H, W = frame_shape[:2]
-            min_x, min_y, max_x, max_y = W, H, 0, 0
-            for c in contours:
-                x, y, w, h = cv2.boundingRect(c)
-                min_x = min(min_x, x)
-                min_y = min(min_y, y)
-                max_x = max(max_x, x + w)
-                max_y = max(max_y, y + h)
-            # Add 5% margin
-            mx = int(0.05 * W)
-            my = int(0.05 * H)
-            x1 = max(0, min_x - mx)
-            y1 = max(0, min_y - my)
-            x2 = min(W, max_x + mx)
-            y2 = min(H, max_y + my)
-            # Ensure minimum size to keep network stable
-            if (x2 - x1) < 64 or (y2 - y1) < 64:
-                return None
-            return (x1, y1, x2, y2)
-        except Exception:
-            return None
         
     def run(self):
         """Main detection loop."""
@@ -234,7 +206,7 @@ class AlertGate:
             self.frame_count % self.detect_every_n == 0):  # Configurable periodic check
             
             # Optionally crop to include-zone bounding box for faster inference
-            crop_rect = self._get_include_crop_rect(frame.shape)
+            crop_rect = get_include_crop_rect(self.roi_manager, frame.shape)
             if crop_rect is not None:
                 x1, y1, x2, y2 = crop_rect
                 detect_frame = frame[y1:y2, x1:x2]
@@ -271,8 +243,8 @@ class AlertGate:
         
         # Send alerts for triggered classes
         for class_name, should_alert in triggers.items():
-            if should_alert and self.should_send_alert(class_name):
-                self.send_alert(class_name, detections, frame)
+            if should_alert and self.alert_manager.should_send_alert(class_name):
+                self.alert_manager.send_alert(class_name, detections, frame)
         
         return FrameData(
             frame=frame,
@@ -280,105 +252,6 @@ class AlertGate:
             motion_info=motion_info,
             detections=detections
         )
-    
-    def should_send_alert(self, class_name: str) -> bool:
-        """Check if enough time has passed since last alert for this class."""
-        current_time = time.time()
-        cooldown = self.config['alerts']['cooldown_seconds'].get(class_name, 60)
-        
-        last_alert = self.last_alert_times.get(class_name, 0)
-        return (current_time - last_alert) >= cooldown
-    
-    def send_alert(self, class_name: str, detections: List[Detection], frame):
-        """Send alert notification without blocking the main loop."""
-        # Find best detection for this class
-        class_detections = [d for d in detections if d.class_name == class_name]
-        if not class_detections:
-            return
-        best_detection = max(class_detections, key=lambda d: d.confidence)
-
-        # Immediately set cooldown and reset temporal history to avoid duplicate alerts
-        # across consecutive frames before the async task runs.
-        self.last_alert_times[class_name] = time.time()
-        self.temporal_filter.reset_class_history(class_name)
-
-        def _task():
-            try:
-                snapshot_path = self.save_snapshot(frame, detections)
-                self.notifier.send_detection_alert(best_detection, snapshot_path)
-                # Update state
-                self.stats['alerts_sent'] += 1
-                event_data = {
-                    'class_name': best_detection.class_name,
-                    'confidence': best_detection.confidence,
-                    'timestamp': best_detection.timestamp.isoformat(),
-                    'frame_number': self.frame_count,
-                    'zone': 'backyard',
-                    'snapshot_path': snapshot_path
-                }
-                # Persist to DB regardless of web dashboard status and attach id for dedupe
-                try:
-                    if hasattr(self, 'event_store') and self.event_store is not None:
-                        insert_id = self.event_store.add_event(event_data)
-                        if isinstance(insert_id, int) and insert_id > 0:
-                            event_data['id'] = insert_id
-                except Exception:
-                    pass
-                # Broadcast to web dashboard if enabled
-                if self.config['web']['enabled']:
-                    self.dashboard.add_event(event_data)
-                self.logger.info(f"🚨 Alert sent: {class_name} ({best_detection.confidence:.2f})")
-            except Exception as e:
-                self.logger.error(f"❌ Failed to send alert: {e}")
-
-        # Offload IO-heavy tasks
-        try:
-            self.alert_executor.submit(_task)
-        except Exception:
-            # Fallback to inline if executor submission fails
-            _task()
-    
-    def save_snapshot(self, frame, detections: List[Detection]) -> str:
-        """Save annotated snapshot."""
-        # Check if sending images is enabled in alerts
-        if not self.config.get('alerts', {}).get('send_image', False):
-            return None
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"cat_detection_{timestamp}_frame_{self.frame_count}.jpg"
-        
-        snapshot_config = self.config.get('recording')
-        if not snapshot_config:
-            self.logger.warning("❌ 'recording' section not found in config. Cannot save snapshot.")
-            return None
-            
-        directory = snapshot_config.get('snapshots_dir')
-        if not directory:
-            self.logger.error("❌ Snapshot directory ('snapshots_dir') not configured under 'recording'.")
-            return None
-
-        filepath = os.path.join(directory, filename)
-
-        # Draw detections on the frame
-        annotated_frame = frame.copy()
-        for det in detections:
-            x1, y1, x2, y2 = map(int, det.bbox)
-            label = f"{det.class_name} {det.confidence:.2f}"
-            
-            # Bounding box
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            # Label
-            cv2.putText(annotated_frame, label, (x1, y1 - 10), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-
-        # Ensure directory exists
-        os.makedirs(directory, exist_ok=True)
-        
-        # Save the frame
-        cv2.imwrite(filepath, annotated_frame)
-        self.logger.info(f"📸 Snapshot saved to {filepath}")
-        return filepath
     
     def start_dashboard(self):
         """Start web dashboard server."""
@@ -400,8 +273,8 @@ class AlertGate:
             pass
         self.capture.release()
         try:
-            if hasattr(self, 'alert_executor'):
-                self.alert_executor.shutdown(wait=False, cancel_futures=True)
+            if hasattr(self, 'alert_manager'):
+                self.alert_manager.shutdown()
         except Exception:
             pass
         try:
