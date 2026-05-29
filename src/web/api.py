@@ -10,6 +10,15 @@ import asyncio
 import time
 from typing import List, Dict, Any, Optional
 import logging
+import yaml
+from pydantic import BaseModel
+
+class ROIPayload(BaseModel):
+    type: str # 'include' or 'exclude'
+    points: List[List[float]]
+
+class ClassesPayload(BaseModel):
+    classes: List[str]
 
 #TurboJPEG import for faster JPEG encoding
 try:
@@ -32,6 +41,7 @@ class WebDashboard:
         self.event_store = event_store
         self.events_limit = events_limit
         self.loop = None  # To store the event loop of the dashboard's thread
+        self.active_streams = 0
         # TurboJPEG encoder instance
         self.jpeg = None
         
@@ -66,7 +76,7 @@ class WebDashboard:
         
         # MJPEG video feed
         @self.app.get("/video_feed")
-        def video_feed():
+        async def video_feed():
             return StreamingResponse(self.generate_frames(), 
                                    media_type="multipart/x-mixed-replace; boundary=frame")
         
@@ -100,26 +110,96 @@ class WebDashboard:
                     logging.error(f"Failed to fetch events from store: {e}")
             # Fallback to in-memory
             return {"events": self.event_history[-limit:]}
-    
+
+        # API endpoint to update ROI
+        @self.app.post("/api/config/roi")
+        async def update_roi(payload: ROIPayload):
+            try:
+                config_path = "config/config.yaml"
+                with open(config_path, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                
+                if 'roi' not in config_data:
+                    config_data['roi'] = {'enabled': True, 'include_zones': {}, 'exclude_zones': {}}
+                
+                # Format points to fewer decimal places
+                formatted_points = [[round(p[0], 3), round(p[1], 3)] for p in payload.points]
+                
+                # Update either include or exclude zones. For simplicity, we overwrite a zone named 'custom_ui'
+                zone_name = "custom_ui_" + payload.type
+                target_dict = f"{payload.type}_zones"
+                
+                # We clear out any existing zones of this type to replace them with the new one
+                config_data['roi'][target_dict] = {
+                    zone_name: {
+                        'points': formatted_points,
+                        'classes': ["person", "cat", "dog"]
+                    }
+                }
+                
+                with open(config_path, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                    
+                return {"status": "success", "message": "ROI updated successfully in config.yaml"}
+            except Exception as e:
+                logging.error(f"Failed to update ROI: {e}")
+                return {"status": "error", "detail": str(e)}
+
+        @self.app.get("/api/config/classes")
+        async def get_classes():
+            try:
+                with open("config/config.yaml", 'r') as f:
+                    config_data = yaml.safe_load(f)
+                return {"classes": config_data.get('detection', {}).get('target_classes', [])}
+            except Exception as e:
+                return {"status": "error", "detail": str(e)}
+
+        @self.app.post("/api/config/classes")
+        async def update_classes(payload: ClassesPayload):
+            try:
+                config_path = "config/config.yaml"
+                with open(config_path, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                
+                if 'detection' not in config_data:
+                    config_data['detection'] = {}
+                    
+                config_data['detection']['target_classes'] = payload.classes
+                
+                with open(config_path, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                    
+                return {"status": "success", "message": "Target classes updated successfully"}
+            except Exception as e:
+                logging.error(f"Failed to update target classes: {e}")
+                return {"status": "error", "detail": str(e)}
+
     # MJPEG stream generator
-    def generate_frames(self):
+    async def generate_frames(self):
         """Generate MJPEG stream for video preview with minimal overhead."""
-        interval = max(1.0 / max(self.preview_fps, 1), 0.01)
-        while True:
-            if self.latest_jpeg is not None:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + self.latest_jpeg + b'\r\n')
-            time.sleep(interval)
-    
+        self.active_streams += 1
+        try:
+            interval = max(1.0 / max(self.preview_fps, 1), 0.01)
+            while True:
+                if self.latest_jpeg is not None:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + self.latest_jpeg + b'\r\n')
+                await asyncio.sleep(interval)
+        finally:
+            self.active_streams -= 1
+        
     # Update latest frame
     def update_frame(self, frame):
         """Update latest frame for streaming by pre-encoding to JPEG."""
+        if getattr(self, 'active_streams', 0) <= 0:
+            return  # Skip expensive resizing and JPEG encoding if no one is watching
+        
         # Resize once here to reduce CPU load in generator
         try:
             h, w = frame.shape[:2]
             target_w, target_h = 640, 480
             if (w, h) != (target_w, target_h):
-                frame = cv2.resize(frame, (target_w, target_h))
+                frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
             if self.jpeg is not None and TJPF_BGR is not None:
                 # Ensure contiguous memory and BGR pixel format for TurboJPEG
                 frame = np.ascontiguousarray(frame)

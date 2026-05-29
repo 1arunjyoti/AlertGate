@@ -1,65 +1,281 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AlertGate Dashboard</title>
-    <link href="/static/style.css" rel="stylesheet">
-</head>
-<body>
+    <link href="/static/style.css" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body data-theme="dark">
     <div class="container">
-        <header>
-            <h1>🛡️ AlertGate Dashboard</h1>
-            <div class="status" id="status">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Connecting...</span>
+      <header>
+        <h1>🛡️ AlertGate <span class="hide-mobile">Dashboard</span></h1>
+        <div class="header-controls">
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            onclick="toggleTheme()"
+            title="Toggle Theme"
+          >
+            🌙
+          </button>
+          <div class="status" id="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Connecting...</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <div class="video-section">
+          <h2>Live Feed</h2>
+          <div
+            class="video-container"
+            ondragstart="return false;"
+            ondrop="return false;"
+          >
+            <div class="camera-skeleton" id="cameraSkeleton">
+              <div class="loader-spinner"></div>
             </div>
-        </header>
-
-        <div class="main-content">
-            <div class="video-section">
-                <h2>📹 Live Feed</h2>
-                <div class="video-container">
-                    <img src="/video_feed" alt="Live Camera Feed" id="videoFeed">
-                    <div class="video-overlay">
-                        <div class="fps-counter" id="fpsCounter">FPS: --</div>
-                    </div>
-                </div>
+            <img
+              src="/video_feed"
+              alt="Live Camera Feed"
+              id="videoFeed"
+              draggable="false"
+              oncontextmenu="return false;"
+              ondragstart="return false;"
+              onload="
+                document.getElementById('cameraSkeleton').style.opacity = '0';
+                setTimeout(
+                  () =>
+                    (document.getElementById('cameraSkeleton').style.display =
+                      'none'),
+                  300,
+                );
+              "
+            />
+            <canvas
+              id="roiCanvas"
+              style="
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 10;
+                cursor: crosshair;
+                display: none;
+              "
+            ></canvas>
+            <div class="video-overlay" style="pointer-events: none">
+              <div class="fps-counter" id="fpsCounter">FPS: --</div>
             </div>
+          </div>
 
-            <div class="stats-section">
-                <h2>📊 Detection Stats</h2>
-                <div class="stats-grid" id="statsGrid">
-                    <!-- Stats will be populated by JavaScript -->
-                </div>
-
-                <h3>🗳️ Temporal Voting Status</h3>
-                <div class="voting-status" id="votingStatus">
-                    <!-- Voting status will be populated by JavaScript -->
-                </div>
-
-                <h3>🎯 Motion Detection</h3>
-                <div class="motion-status" id="motionStatus">
-                    <div class="motion-indicator" id="motionIndicator">
-                        <span class="motion-dot" id="motionDot"></span>
-                        <span id="motionText">No Motion</span>
-                    </div>
-                    <div class="motion-stats">
-                        <span>Area: <span id="motionArea">0</span>px²</span>
-                        <span>Contours: <span id="motionContours">0</span></span>
-                    </div>
-                </div>
+          <div class="roi-controls">
+            <div class="roi-header">
+              <div class="roi-legend">
+                <span class="legend-item"
+                  ><div class="legend-color include"></div>
+                  Include Zone</span
+                >
+                <span class="legend-item"
+                  ><div class="legend-color exclude"></div>
+                  Exclude Zone</span
+                >
+              </div>
+              <button
+                id="btnEditRoi"
+                onclick="toggleRoiEditor()"
+                class="btn-primary"
+              >
+                ✏️ Edit ROI Zones
+              </button>
             </div>
+            <div
+              id="roiEditorTools"
+              class="roi-editor-tools"
+              style="display: none"
+            >
+              <button onclick="startDrawing('include')" class="btn-success">
+                🟢 Draw Include Zone
+              </button>
+              <button onclick="startDrawing('exclude')" class="btn-danger">
+                🔴 Draw Exclude Zone
+              </button>
+              <button onclick="clearCurrentDrawing()" class="btn-secondary">
+                🗑️ Clear Points
+              </button>
+              <button onclick="saveRoi()" class="btn-warning">
+                💾 Save & Apply
+              </button>
+              <div class="roi-help-text">
+                Click on the video to add polygon points. Close the loop by
+                saving.
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div class="events-section">
-            <h2>🚨 Recent Events</h2>
-            <div class="events-container" id="eventsContainer">
-                <!-- Events will be populated by JavaScript -->
+        <div class="stats-section">
+          <h2>⚙️ Configuration</h2>
+          <details class="config-card" style="cursor: pointer">
+            <summary
+              class="config-title"
+              style="margin-bottom: 0; font-weight: 600; outline: none"
+            >
+              🎯 Target Classes
+            </summary>
+            <div
+              id="targetClassesForm"
+              class="target-classes-form"
+              style="margin-top: 15px; cursor: default"
+            >
+              <div class="checkbox-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="class_person" value="person" />
+                  <span>Person</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="class_cat" value="cat" />
+                  <span>Cat</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="class_dog" value="dog" />
+                  <span>Dog</span>
+                </label>
+              </div>
+              <button
+                onclick="saveTargetClasses()"
+                class="btn-success save-classes-btn"
+              >
+                Save Classes
+              </button>
             </div>
+          </details>
+
+          <h2>Detection Stats</h2>
+          <div class="stats-grid" id="statsGrid">
+            <div class="empty-state" id="statsEmptyState">
+              <div style="font-size: 2rem; margin-bottom: 10px">📊</div>
+              <div>Waiting for stream data...</div>
+            </div>
+          </div>
+
+          <h3>
+            Motion Detection
+            <span class="tooltip"
+              >ⓘ<span class="tooltip-text"
+                >Detects movement in the camera feed based on pixel area changes
+                and valid contours.</span
+              ></span
+            >
+          </h3>
+          <div
+            class="motion-status"
+            id="motionStatus"
+            style="margin-bottom: 25px"
+          >
+            <div class="motion-indicator" id="motionIndicator">
+              <span class="motion-dot" id="motionDot"></span>
+              <span id="motionText">No Motion</span>
+            </div>
+            <div class="motion-stats">
+              <span
+                >Area:
+                <span id="motionArea" style="font-weight: 600">0</span>px²</span
+              >
+              <span>
+                Contours:
+                <span id="motionContours" style="font-weight: 600">0</span>
+                <span class="tooltip"
+                  >ⓘ<span class="tooltip-text"
+                    >Distinct clusters of motion pixels. Higher numbers mean
+                    more complex movement.</span
+                  ></span
+                >
+              </span>
+            </div>
+          </div>
+
+          <details open style="margin-top: 15px">
+            <summary
+              style="
+                font-size: 1.1rem;
+                font-weight: 600;
+                cursor: pointer;
+                outline: none;
+                margin-bottom: 15px;
+              "
+            >
+              Temporal Voting Status
+              <span class="tooltip" style="font-size: 1rem; margin-left: 5px"
+                >ⓘ<span class="tooltip-text"
+                  >Requires an object class to be detected across multiple
+                  recent frames to prevent false alerts.</span
+                ></span
+              >
+            </summary>
+            <div class="voting-status" id="votingStatus">
+              <!-- Voting status will be populated by JavaScript -->
+            </div>
+          </details>
         </div>
+      </div>
+
+      <details class="events-section" open>
+        <summary
+          style="
+            font-size: 1.25rem;
+            font-weight: 600;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            outline: none;
+          "
+        >
+          Recent Events
+        </summary>
+        <div class="events-container" id="eventsContainer">
+          <div class="empty-state" id="eventsEmptyState">
+            <div style="font-size: 2rem; margin-bottom: 10px">📭</div>
+            <div>No recent camera events to display</div>
+          </div>
+        </div>
+      </details>
     </div>
 
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <script src="/static/dashboard.js"></script>
-</body>
+    <script>
+      function toggleTheme() {
+        const body = document.body;
+        const themeToggle = document.getElementById("themeToggle");
+        if (body.getAttribute("data-theme") === "dark") {
+          body.setAttribute("data-theme", "light");
+          themeToggle.innerHTML = "☀️";
+          localStorage.setItem("theme", "light");
+        } else {
+          body.setAttribute("data-theme", "dark");
+          themeToggle.innerHTML = "🌙";
+          localStorage.setItem("theme", "dark");
+        }
+      }
+
+      // Initialize theme based on preference
+      document.addEventListener("DOMContentLoaded", () => {
+        const savedTheme = localStorage.getItem("theme") || "dark";
+        document.body.setAttribute("data-theme", savedTheme);
+        document.getElementById("themeToggle").innerHTML =
+          savedTheme === "dark" ? "🌙" : "☀️";
+      });
+    </script>
+  </body>
 </html>

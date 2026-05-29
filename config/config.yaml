@@ -1,91 +1,94 @@
-# Camera Configuration
 camera:
-  url: "YOUR_CAMERA_URL_HERE"  # Update with your phone's IP or use environment variable
+  url: YOUR_CAMERA_URL_HERE
   width: 1280
   height: 720
   fps: 15
   buffer_size: 1
-  rtsp_transport: "tcp"
-
-# Detection Configuration  
+  rtsp_transport: tcp
 detection:
-  model: "yolo11n.pt"  # Will auto-download on first run
-  confidence: 0.6      # Detection confidence threshold
-  target_classes: ["cat", "dog", "person"]  # Classes to detect and alert for
-  inference_size: 512  # Input image size for model (smaller = faster)
-  iou: 0.45            # NMS IoU threshold
-  max_det: 30          # Max detections per image
-  process_every_n_frames: 3  # Process every 2nd frame for performance, Motion gate will override this
-
-# Temporal Filtering (K of N voting)
+  model: yolo11n.pt
+  confidence: 0.6
+  target_classes:
+    - person
+    - cat
+    - dog
+  inference_size: 512
+  iou: 0.45
+  max_det: 30
+  process_every_n_frames: 3
 temporal:
   cat:
-    votes_required: 3    # Need 3 detections
-    window_size: 5       # In last 5 frames
+    votes_required: 3
+    window_size: 5
   dog:
     votes_required: 3
     window_size: 5
   person:
-    votes_required: 2    # Faster alerts for humans
+    votes_required: 2
     window_size: 4
-
-# Motion Detection Gate
 motion:
   enabled: true
-  threshold: 25           # Sensitivity (lower = more sensitive)
-  min_contour_area: 500  # Filter small movements
+  threshold: 25
+  min_contour_area: 500
   background_learning_rate: 0.01
   skip_frames_no_motion: true
-
-# Region of Interest (ROI)
 roi:
   enabled: true
-  # Normalized coordinates (0.0-1.0), polygon points
   include_zones:
-    backyard:
-      points: [[0.1, 0.2], [0.9, 0.2], [0.9, 0.8], [0.1, 0.8]]
-      classes: ["cat", "dog", "person"]
+    custom_ui_include:
+      points:
+        - - 0.36
+          - 0.357
+        - - 0.475
+          - 0.733
+        - - 0.033
+          - 0.788
+        - - 0.075
+          - 0.296
+      classes:
+        - person
+        - cat
+        - dog
   exclude_zones:
-    road:
-      points: [[0.0, 0.0], [1.0, 0.0], [1.0, 0.15], [0.0, 0.15]]
-      classes: ["person", "cat", "dog"]
-
-# Telegram Configuration
+    custom_ui_exclude:
+      points:
+        - - 0.892
+          - 0.988
+        - - 0.995
+          - 0.982
+        - - 0.665
+          - 0.302
+        - - 0.583
+          - 0.312
+      classes:
+        - person
+        - cat
+        - dog
 telegram:
-  bot_token: "YOUR_BOT_TOKEN_HERE"  # Replace with your actual token or use environment variable
-  chat_id: "YOUR_CHAT_ID_HERE"      # Replace with your actual chat ID or use environment variable
-  
-# Alert Configuration
+  bot_token: YOUR_BOT_TOKEN_HERE
+  chat_id: YOUR_CHAT_ID_HERE
 alerts:
   cooldown_seconds:
     cat: 120
     dog: 120
-    person: 60   
-  send_image: true       # Include snapshot with alert
+    person: 60
+  send_image: true
   burst_limit: 5
   burst_window_seconds: 600
-  
-# Web Dashboard
 web:
   enabled: true
-  host: "0.0.0.0"
+  host: 0.0.0.0
   port: 8080
-  preview_fps: 2        # Low FPS for web preview
+  preview_fps: 2
   max_events_history: 100
-
-# Recording
 recording:
-  snapshots_dir: "./media/snapshots"
-  clips_dir: "./media/clips"
+  snapshots_dir: ./media/snapshots
+  clips_dir: ./media/clips
   ringbuffer_seconds: 15
   retention_days: 7
-
-# Database (SQLite)
 database:
-  path: "./media/alertgate.db"
+  path: ./media/alertgate.db
   retention_days: 30
-
-# Logging
 logging:
-  level: "INFO"
-  file: "./logs/app.log"
+  level: INFO
+  file: ./logs/app.log

@@ -91,16 +91,10 @@ class ROIManager:
         for zone_name, contours in self.include_contours.items():
             if contours:
                 cv2.drawContours(overlay, contours, -1, (0, 255, 0), 2)
-                point = contours[0][0][0]
-                cv2.putText(overlay, f"INCLUDE: {zone_name}", 
-                           (int(point[0]), int(point[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
         # Draw exclude zones in red
         for zone_name, contours in self.exclude_contours.items():
             if contours:
                 cv2.drawContours(overlay, contours, -1, (0, 0, 255), 2)
-                point = contours[0][0][0]
-                cv2.putText(overlay, f"EXCLUDE: {zone_name}", 
-                           (int(point[0]), int(point[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         
         return cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
