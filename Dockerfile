@@ -10,13 +10,13 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        curl \
-        ffmpeg \
-        libgl1 \
-        libglib2.0-0 \
-        libgomp1 \
-        libjpeg62-turbo \
-        libturbojpeg0 \
+    curl \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libjpeg62-turbo \
+    libturbojpeg0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -27,7 +27,7 @@ RUN pip install --upgrade pip setuptools wheel \
     && grep -viE '^(torch|torchvision|pyreadline3)==' requirements.txt > /tmp/requirements-docker.txt \
     && pip install -r /tmp/requirements-docker.txt
 
-RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
+RUN python -c "from ultralytics import YOLO; YOLO('yolo26n.pt')"
 
 COPY config ./config
 COPY src ./src

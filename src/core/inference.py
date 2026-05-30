@@ -9,13 +9,21 @@ class YOLODetector:
     def __init__(self, det_cfg: Dict[str, Any]):
         """
         det_cfg keys:
-          - model: str ("yolo11n.pt" or local path)
+          - model: str ("yolo26n.pt" or local path)
           - confidence: float
           - target_classes: List[str]
           - inference_size: int (e.g., 640)
         """
-        self.model_name = det_cfg.get("model", "yolo11n.pt")
-        self.conf_threshold = float(det_cfg.get("confidence", 0.55))
+        self.model_name = det_cfg.get("model", "yolo26n.pt")
+        
+        conf_cfg = det_cfg.get("confidence", 0.55)
+        if isinstance(conf_cfg, dict):
+            self.class_confidences = {k.lower(): float(v) for k, v in conf_cfg.items()}
+            self.conf_threshold = float(min(self.class_confidences.values())) if self.class_confidences else 0.55
+        else:
+            self.conf_threshold = float(conf_cfg)
+            self.class_confidences = {}
+            
         self.imgsz = int(det_cfg.get("inference_size", 640))
         self.iou = float(det_cfg.get("iou", 0.45))
         self.max_det = int(det_cfg.get("max_det", 50))
@@ -86,9 +94,13 @@ class YOLODetector:
             for b in r.boxes:
                 cls_id = int(b.cls[0])
                 conf = float(b.conf)
-                # Additional safeguard filtering (should already be applied by model call)
-                if conf < self.conf_threshold:
+                class_name_lower = self.class_names.get(cls_id, str(cls_id)).lower()
+
+                # Apply per-class confidence threshold
+                required_conf = self.class_confidences.get(class_name_lower, self.conf_threshold)
+                if conf < required_conf:
                     continue
+                
                 if self.target_ids and cls_id not in self.target_ids:
                     continue
                 

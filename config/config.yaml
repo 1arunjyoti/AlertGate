@@ -1,69 +1,107 @@
 camera:
-  url: YOUR_CAMERA_URL_HERE
-  width: 1280
-  height: 720
-  fps: 15
+  url: rtsp://admin:admin2047@192.168.0.50:554/cam/realmonitor?channel=1&subtype=0
+  width: 960
+  height: 1080
+  fps: 25
   buffer_size: 1
   rtsp_transport: tcp
 detection:
-  model: yolo11n.pt
-  confidence: 0.6
+  model: yolo26n.pt
+  confidence:
+    person: 0.6
+    cat: 0.45
+    dog: 0.45
+    cow: 0.5
+    bicycle: 0.5
+    car: 0.5
+    motorcycle: 0.5
+    bus: 0.5
   target_classes:
-    - person
-    - cat
-    - dog
-  inference_size: 512
+  - person
+  - cat
+  - dog
+  - cow
+  - bicycle
+  - car
+  - motorcycle
+  - bus
+  inference_size: 640
   iou: 0.45
   max_det: 30
   process_every_n_frames: 3
 temporal:
   cat:
-    votes_required: 3
+    votes_required: 2
     window_size: 5
   dog:
-    votes_required: 3
+    votes_required: 2
     window_size: 5
   person:
     votes_required: 2
     window_size: 4
+  bicycle:
+    votes_required: 2
+    window_size: 5
+  car:
+    votes_required: 2
+    window_size: 5
+  motorcycle:
+    votes_required: 2
+    window_size: 5
+  bus:
+    votes_required: 2
+    window_size: 5
+  cow:
+    votes_required: 2
+    window_size: 5
 motion:
   enabled: true
-  threshold: 25
-  min_contour_area: 500
-  background_learning_rate: 0.01
+  threshold: 15
+  min_contour_area: 300
+  background_learning_rate: 0.005
   skip_frames_no_motion: true
 roi:
   enabled: true
   include_zones:
     custom_ui_include:
       points:
-        - - 0.36
-          - 0.357
-        - - 0.475
-          - 0.733
-        - - 0.033
-          - 0.788
-        - - 0.075
-          - 0.296
+      - - 0.013
+        - 0.992
+      - - 0.129
+        - 0.001
+      - - 0.346
+        - 0.001
+      - - 0.605
+        - 0.995
       classes:
-        - person
-        - cat
-        - dog
+      - person
+      - cat
+      - dog
+      - cow
+      - bicycle
+      - car
+      - motorcycle
+      - bus
   exclude_zones:
     custom_ui_exclude:
       points:
-        - - 0.892
-          - 0.988
-        - - 0.995
-          - 0.982
-        - - 0.665
-          - 0.302
-        - - 0.583
-          - 0.312
+      - - 0.548
+        - 0.583
+      - - 0.614
+        - 0.771
+      - - 0.664
+        - 0.712
+      - - 0.602
+        - 0.53
       classes:
-        - person
-        - cat
-        - dog
+      - person
+      - cat
+      - dog
+      - cow
+      - bicycle
+      - car
+      - motorcycle
+      - bus
 telegram:
   bot_token: YOUR_BOT_TOKEN_HERE
   chat_id: YOUR_CHAT_ID_HERE
@@ -72,6 +110,11 @@ alerts:
     cat: 120
     dog: 120
     person: 60
+    cow: 120
+    bicycle: 120
+    car: 120
+    motorcycle: 120
+    bus: 120
   send_image: true
   burst_limit: 5
   burst_window_seconds: 600

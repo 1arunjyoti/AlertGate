@@ -7,7 +7,7 @@ AlertGate transforms your spare smartphone into a powerful AI-driven security ca
 ## 🌟 Features
 
 ### Core Detection Capabilities
-- **Multi-class Detection**: Cats, dogs, humans, and other animals using YOLO11n
+- **Multi-class Detection**: Cats, dogs, humans, and other animals using YOLO26n
 - **Phone Camera Integration**: Convert any smartphone into an IP camera via RTSP
 - **Temporal Filtering**: K-of-N voting system to eliminate false alarms
 - **Motion Gating**: CPU-efficient processing with background subtraction
@@ -82,12 +82,12 @@ Then build and start the container:
 docker compose up --build
 ```
 
-The dashboard will be available at `http://localhost:8080`. Runtime data is stored in Docker volumes named `alertgate_media` and `alertgate_logs`, so it survives container rebuilds. The Docker image preloads the default `yolo11n.pt` model during build.
+The dashboard will be available at `http://localhost:8080`. Runtime data is stored in Docker volumes named `alertgate_media` and `alertgate_logs`, so it survives container rebuilds. The Docker image preloads the default `yolo26n.pt` model during build.
 
 If you want to use a local model file instead of the one baked into the image, uncomment the model volume in `docker-compose.yml`:
 
 ```yaml
-- ./yolo11n.pt:/app/yolo11n.pt:ro
+- ./yolo26n.pt:/app/yolo26n.pt:ro
 ```
 
 ### 2. Phone Setup (Camera)
@@ -134,7 +134,7 @@ python src/main.py
 🚀 Starting AlertGate...
 🌐 Web dashboard: http://localhost:8080
 ✅ Connected to RTSP stream: rtsp://Ip_Address:Port/h264_ucs.sdp
-✅ YOLO11n model loaded successfully!
+✅ YOLO26n model loaded successfully!
 ✅ Telegram bot connected: YourBotName
 ✅ Snapshot saved to ...
 ✅ Alert sent: cat (0.84)
@@ -148,7 +148,7 @@ AlertGate/
 │   ├── main.py                 # Application entry point
 │   ├── core/                   # Core detection modules
 │   │   ├── capture.py          # RTSP camera interface
-│   │   ├── inference.py        # YOLO11n detection engine
+│   │   ├── inference.py        # YOLO26n detection engine
 │   │   ├── motion_gate.py      # Implements the motion detection
 │   │   ├── roi.py              # Region of interest filtering
 │   │   ├── temporal_filter.py  # K-of-N voting system
@@ -178,7 +178,7 @@ AlertGate/
     ↓
 🎭 Motion Detection Gate
     ↓ (if motion detected)
-🧠 YOLO11n Inference
+🧠 YOLO26n Inference
     ↓
 🗺️ ROI Filtering
     ↓

@@ -13,4 +13,4 @@ test/
 *.log
 Dockerfile
 docker-compose.yml
-yolo11n.pt
+yolo26n.pt

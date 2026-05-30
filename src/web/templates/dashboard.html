@@ -88,6 +88,21 @@
                   Exclude Zone</span
                 >
               </div>
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  font-weight: 500;
+                "
+              >
+                <input
+                  type="checkbox"
+                  id="toggleRoiEnabled"
+                  onchange="toggleRoiFeature(this)"
+                />
+                Enable ROI Filtering
+              </label>
               <button
                 id="btnEditRoi"
                 onclick="toggleRoiEditor()"
@@ -135,19 +150,8 @@
               class="target-classes-form"
               style="margin-top: 15px; cursor: default"
             >
-              <div class="checkbox-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="class_person" value="person" />
-                  <span>Person</span>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="class_cat" value="cat" />
-                  <span>Cat</span>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="class_dog" value="dog" />
-                  <span>Dog</span>
-                </label>
+              <div class="checkbox-group" id="targetClassCheckboxes">
+                <div class="empty-state">Loading classes...</div>
               </div>
               <button
                 onclick="saveTargetClasses()"

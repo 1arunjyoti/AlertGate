@@ -15,7 +15,7 @@ class MotionGate:
         # Background subtractor[47][50]
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=500, 
-            varThreshold=16, 
+            varThreshold=self.threshold, 
             detectShadows=True
         )
         

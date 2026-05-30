@@ -12,7 +12,7 @@ services:
       - alertgate_media:/app/media
       - alertgate_logs:/app/logs
       # Optional: keep the YOLO model local so first startup does not re-download it.
-      # - ./yolo11n.pt:/app/yolo11n.pt:ro
+      # - ./yolo26n.pt:/app/yolo26n.pt:ro
     restart: unless-stopped
 
 volumes:

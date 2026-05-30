@@ -9,7 +9,8 @@ class AlertGateDashboard {
   }
   // Establish WebSocket connection and set up event handlers
   connectWebSocket() {
-    const wsUrl = `ws://${window.location.host}/ws`;
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${wsProtocol}://${window.location.host}/ws`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
@@ -232,30 +233,100 @@ class AlertGateDashboard {
 document.addEventListener("DOMContentLoaded", () => {
   new AlertGateDashboard();
   loadTargetClasses();
+  loadRoiState();
 });
 
 // Config Logic
+const DEFAULT_TARGET_CLASSES = [
+  "person",
+  "cat",
+  "dog",
+  "cow",
+  "bicycle",
+  "car",
+  "motorcycle",
+  "bus",
+];
+
+let availableTargetClasses = [...DEFAULT_TARGET_CLASSES];
+
+function formatClassName(className) {
+  return className
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function renderTargetClassCheckboxes(selectedClasses) {
+  const container = document.getElementById("targetClassCheckboxes");
+  if (!container) return;
+
+  container.innerHTML = availableTargetClasses
+    .map((className) => {
+      const checked = selectedClasses.includes(className) ? "checked" : "";
+      return `
+        <label class="checkbox-label">
+          <input type="checkbox" value="${className}" ${checked} />
+          <span>${formatClassName(className)}</span>
+        </label>
+      `;
+    })
+    .join("");
+}
+
 async function loadTargetClasses() {
   try {
     const response = await fetch("/api/config/classes");
     if (response.ok) {
       const data = await response.json();
       const classes = data.classes || [];
-      document.getElementById("class_person").checked =
-        classes.includes("person");
-      document.getElementById("class_cat").checked = classes.includes("cat");
-      document.getElementById("class_dog").checked = classes.includes("dog");
+      availableTargetClasses =
+        data.available_classes && data.available_classes.length
+          ? data.available_classes
+          : DEFAULT_TARGET_CLASSES;
+      renderTargetClassCheckboxes(classes);
     }
   } catch (e) {
     console.warn("Failed to load target classes", e);
+    renderTargetClassCheckboxes(DEFAULT_TARGET_CLASSES);
+  }
+}
+
+async function loadRoiState() {
+  try {
+    const response = await fetch("/api/config/roi/state");
+    if (response.ok) {
+      const data = await response.json();
+      document.getElementById("toggleRoiEnabled").checked = data.enabled;
+    }
+  } catch (e) {
+    console.warn("Failed to load ROI state", e);
+  }
+}
+
+async function toggleRoiFeature(element) {
+  const isEnabled = element.checked;
+  try {
+    const res = await fetch("/api/config/roi/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: isEnabled }),
+    });
+    if (!res.ok) {
+      alert("Failed to update ROI state.");
+      element.checked = !isEnabled; // revert UI
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Error updating ROI state.");
+    element.checked = !isEnabled;
   }
 }
 
 async function saveTargetClasses() {
-  const selected = [];
-  if (document.getElementById("class_person").checked) selected.push("person");
-  if (document.getElementById("class_cat").checked) selected.push("cat");
-  if (document.getElementById("class_dog").checked) selected.push("dog");
+  const selected = Array.from(
+    document.querySelectorAll("#targetClassCheckboxes input:checked"),
+  ).map((input) => input.value);
 
   try {
     const response = await fetch("/api/config/classes", {
@@ -305,6 +376,7 @@ let currentZoneType = null;
 let polygonPoints = [];
 let canvas = null;
 let ctx = null;
+let roiResizeHandler = null;
 
 function toggleRoiEditor() {
   roiEditorActive = !roiEditorActive;
@@ -318,19 +390,36 @@ function toggleRoiEditor() {
     tools.style.flexWrap = "wrap";
     btn.innerHTML = "❌ Cancel Editing";
     initCanvas();
+    if (!roiResizeHandler) {
+      roiResizeHandler = () => {
+        if (!roiEditorActive) return;
+        resizeRoiCanvas();
+        drawPolygon();
+      };
+      window.addEventListener("resize", roiResizeHandler);
+    }
   } else {
     canvas.style.display = "none";
     tools.style.display = "none";
     btn.innerHTML = "✏️ Edit ROI Zones";
     currentZoneType = null;
     polygonPoints = [];
+    if (roiResizeHandler) {
+      window.removeEventListener("resize", roiResizeHandler);
+      roiResizeHandler = null;
+    }
   }
 }
 
-function initCanvas() {
+function resizeRoiCanvas() {
   const img = document.getElementById("videoFeed");
+  if (!canvas || !img) return;
   canvas.width = img.clientWidth;
   canvas.height = img.clientHeight;
+}
+
+function initCanvas() {
+  resizeRoiCanvas();
   ctx = canvas.getContext("2d");
 
   canvas.onclick = (e) => {
@@ -352,14 +441,6 @@ function initCanvas() {
     polygonPoints.push([normX, normY]);
     drawPolygon();
   };
-
-  window.addEventListener("resize", () => {
-    if (roiEditorActive) {
-      canvas.width = img.clientWidth;
-      canvas.height = img.clientHeight;
-      drawPolygon();
-    }
-  });
 }
 
 function startDrawing(type) {

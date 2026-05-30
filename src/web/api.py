@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -7,18 +7,31 @@ import cv2
 import numpy as np
 import json
 import asyncio
-import time
 from typing import List, Dict, Any, Optional
 import logging
-import yaml
 from pydantic import BaseModel
+from services.config_store import ConfigStore
 
 class ROIPayload(BaseModel):
     type: str # 'include' or 'exclude'
     points: List[List[float]]
 
+class ROIStatePayload(BaseModel):
+    enabled: bool
+
 class ClassesPayload(BaseModel):
     classes: List[str]
+
+TARGET_CLASS_OPTIONS = [
+    "person",
+    "cat",
+    "dog",
+    "cow",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "bus",
+]
 
 #TurboJPEG import for faster JPEG encoding
 try:
@@ -28,7 +41,7 @@ except Exception:
     TJPF_BGR = None
 
 class WebDashboard:
-    def __init__(self, preview_fps: int = 2, event_store=None, events_limit: int = 50):
+    def __init__(self, preview_fps: int = 2, event_store=None, events_limit: int = 50, config_path: str = "config/config.yaml"):
         self.app = FastAPI(title="EdgeSentinel Dashboard")
         self.preview_fps = preview_fps
         self.connected_clients: List[WebSocket] = []
@@ -40,6 +53,7 @@ class WebDashboard:
         self.event_history = []
         self.event_store = event_store
         self.events_limit = events_limit
+        self.config_store = ConfigStore(config_path)
         self.loop = None  # To store the event loop of the dashboard's thread
         self.active_streams = 0
         # TurboJPEG encoder instance
@@ -114,65 +128,92 @@ class WebDashboard:
         # API endpoint to update ROI
         @self.app.post("/api/config/roi")
         async def update_roi(payload: ROIPayload):
+            if payload.type not in {"include", "exclude"}:
+                raise HTTPException(status_code=400, detail="type must be 'include' or 'exclude'")
             try:
-                config_path = "config/config.yaml"
-                with open(config_path, 'r') as f:
-                    config_data = yaml.safe_load(f)
-                
-                if 'roi' not in config_data:
-                    config_data['roi'] = {'enabled': True, 'include_zones': {}, 'exclude_zones': {}}
-                
-                # Format points to fewer decimal places
                 formatted_points = [[round(p[0], 3), round(p[1], 3)] for p in payload.points]
-                
-                # Update either include or exclude zones. For simplicity, we overwrite a zone named 'custom_ui'
-                zone_name = "custom_ui_" + payload.type
-                target_dict = f"{payload.type}_zones"
-                
-                # We clear out any existing zones of this type to replace them with the new one
-                config_data['roi'][target_dict] = {
-                    zone_name: {
-                        'points': formatted_points,
-                        'classes': ["person", "cat", "dog"]
+
+                def apply_roi_update(config_data: Dict[str, Any]):
+                    if 'roi' not in config_data:
+                        config_data['roi'] = {'enabled': True, 'include_zones': {}, 'exclude_zones': {}}
+
+                    target_classes = config_data.get('detection', {}).get('target_classes', TARGET_CLASS_OPTIONS)
+                    if not target_classes:
+                        target_classes = TARGET_CLASS_OPTIONS
+
+                    # Update either include or exclude zones. For simplicity, we overwrite a zone named 'custom_ui'
+                    zone_name = "custom_ui_" + payload.type
+                    target_dict = f"{payload.type}_zones"
+
+                    # We clear out any existing zones of this type to replace them with the new one
+                    config_data['roi'][target_dict] = {
+                        zone_name: {
+                            'points': formatted_points,
+                            'classes': target_classes
+                        }
                     }
-                }
-                
-                with open(config_path, 'w') as f:
-                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-                    
+
+                self.config_store.update(apply_roi_update)
                 return {"status": "success", "message": "ROI updated successfully in config.yaml"}
             except Exception as e:
                 logging.error(f"Failed to update ROI: {e}")
-                return {"status": "error", "detail": str(e)}
+                raise HTTPException(status_code=500, detail="Failed to update ROI configuration") from e
+
+        @self.app.get("/api/config/roi/state")
+        async def get_roi_state():
+            try:
+                config_data = self.config_store.read()
+                enabled = config_data.get('roi', {}).get('enabled', False)
+                return {"enabled": enabled}
+            except Exception as e:
+                logging.error(f"Failed to fetch ROI state: {e}")
+                raise HTTPException(status_code=500, detail="Failed to fetch ROI state") from e
+
+        @self.app.post("/api/config/roi/state")
+        async def update_roi_state(payload: ROIStatePayload):
+            try:
+                def apply_roi_state(config_data: Dict[str, Any]):
+                    if 'roi' not in config_data:
+                        config_data['roi'] = {'enabled': payload.enabled, 'include_zones': {}, 'exclude_zones': {}}
+                    else:
+                        config_data['roi']['enabled'] = payload.enabled
+
+                self.config_store.update(apply_roi_state)
+                return {"status": "success", "message": "ROI state updated successfully in config.yaml"}
+            except Exception as e:
+                logging.error(f"Failed to update ROI state: {e}")
+                raise HTTPException(status_code=500, detail="Failed to update ROI state") from e
 
         @self.app.get("/api/config/classes")
         async def get_classes():
             try:
-                with open("config/config.yaml", 'r') as f:
-                    config_data = yaml.safe_load(f)
-                return {"classes": config_data.get('detection', {}).get('target_classes', [])}
+                config_data = self.config_store.read()
+                return {
+                    "classes": config_data.get('detection', {}).get('target_classes', []),
+                    "available_classes": TARGET_CLASS_OPTIONS,
+                }
             except Exception as e:
-                return {"status": "error", "detail": str(e)}
+                logging.error(f"Failed to fetch target classes: {e}")
+                raise HTTPException(status_code=500, detail="Failed to fetch target classes") from e
 
         @self.app.post("/api/config/classes")
         async def update_classes(payload: ClassesPayload):
             try:
-                config_path = "config/config.yaml"
-                with open(config_path, 'r') as f:
-                    config_data = yaml.safe_load(f)
-                
-                if 'detection' not in config_data:
-                    config_data['detection'] = {}
-                    
-                config_data['detection']['target_classes'] = payload.classes
-                
-                with open(config_path, 'w') as f:
-                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-                    
+                requested_classes = [c.lower() for c in payload.classes]
+
+                def apply_classes(config_data: Dict[str, Any]):
+                    if 'detection' not in config_data:
+                        config_data['detection'] = {}
+
+                    config_data['detection']['target_classes'] = [
+                        c for c in TARGET_CLASS_OPTIONS if c in requested_classes
+                    ]
+
+                self.config_store.update(apply_classes)
                 return {"status": "success", "message": "Target classes updated successfully"}
             except Exception as e:
                 logging.error(f"Failed to update target classes: {e}")
-                return {"status": "error", "detail": str(e)}
+                raise HTTPException(status_code=500, detail="Failed to update target classes") from e
 
     # MJPEG stream generator
     async def generate_frames(self):

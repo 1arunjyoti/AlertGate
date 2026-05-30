@@ -46,6 +46,15 @@ class RTSPCapture:
         ret, frame = self.cap.read()
         return ret, frame
     
+    def get_stream_info(self) -> Tuple[int, int, float]:
+        """Return (width, height, fps) of the currently connected stream."""
+        if not self.cap or not self.cap.isOpened():
+            return 0, 0, 0.0
+        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        return width, height, fps
+
     def reconnect(self) -> bool:
         """Reconnect to stream."""
         self.logger.warning("🔄 Attempting to reconnect...")

@@ -47,10 +47,10 @@ class CatDetector:
         self.logger = logging.getLogger(__name__)
         
     def setup_model(self):
-        """Load YOLO11n model."""
+        """Load YOLO26n model."""
         try:
             model_name = self.config['detection']['model']
-            print(f"🔄 Loading YOLO11n model: {model_name}")
+            print(f"🔄 Loading YOLO26n model: {model_name}")
             self.model = YOLO(model_name) 
             print(f"✅ Model loaded successfully!")
             

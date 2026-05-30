@@ -1,4 +1,3 @@
-import yaml
 import logging
 import numpy as np
 import time
@@ -19,15 +18,16 @@ from core.inference import YOLODetector
 from pipeline.roi_crop import get_include_crop_rect
 from services.telegram_service import TelegramNotifier
 from services.event_store import EventStore
+from services.config_store import ConfigStore
 from web.api import WebDashboard
 
 load_dotenv()
 
 class AlertGate:
     def __init__(self, config_path: str = "config/config.yaml"):
+        self.config_store = ConfigStore(config_path)
         try:
-            with open(config_path, 'r') as file:
-                self.config = yaml.safe_load(file)
+            self.config = self.config_store.read()
             print(f"✅ Configuration loaded from {config_path}")
         except FileNotFoundError:
             print(f"❌ Config file {config_path} not found!")
@@ -81,7 +81,12 @@ class AlertGate:
         self.dashboard = None
         if self.config['web']['enabled']:
             events_limit = int(self.config['web'].get('max_events_history', 100))
-            self.dashboard = WebDashboard(self.config['web']['preview_fps'], event_store=self.event_store, events_limit=events_limit)
+            self.dashboard = WebDashboard(
+                self.config['web']['preview_fps'],
+                event_store=self.event_store,
+                events_limit=events_limit,
+                config_path=config_path
+            )
         
         # State tracking
         self.frame_count = 0
@@ -150,6 +155,26 @@ class AlertGate:
                 # Initialize ROI masks on first frame
                 if self.frame_count == 1:
                     self.roi_manager.create_masks(frame.shape)
+                    
+                    # Dynamically update config YAML with actual camera properties
+                    cam_width, cam_height, cam_fps = self.capture.get_stream_info()
+                    if cam_width > 0:
+                        try:
+                            self.config['camera']['width'] = cam_width
+                            self.config['camera']['height'] = cam_height
+                            self.config['camera']['fps'] = int(cam_fps) if cam_fps > 0 else self.config['camera'].get('fps', 0)
+
+                            def apply_camera_update(config_data):
+                                if 'camera' not in config_data:
+                                    config_data['camera'] = {}
+                                config_data['camera']['width'] = cam_width
+                                config_data['camera']['height'] = cam_height
+                                config_data['camera']['fps'] = int(cam_fps) if cam_fps > 0 else config_data['camera'].get('fps', 0)
+
+                            self.config_store.update(apply_camera_update)
+                            self.logger.info(f"🔄 Dynamically updated camera config to match source: {cam_width}x{cam_height} @ {cam_fps}fps")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Could not update config.yaml with dynamic resolution: {e}")
                 
                 # Process frame
                 frame_data = self.process_frame(frame)
